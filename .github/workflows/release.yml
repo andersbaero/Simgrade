@@ -115,4 +115,10 @@ jobs:
             is unsigned. Choose *More info → Run anyway*. Windows Firewall will also ask to allow
             `wowsimtbc.exe`; private networks is enough — nothing listens outside localhost.
 
-            **macOS:** right-click → Open the first time, since the binary is not notarised.
+            **macOS:** the download loses its executable bit, so set it before running:
+
+            ```bash
+            chmod +x Simgrade-macos-arm64
+            xattr -d com.apple.quarantine Simgrade-macos-arm64
+            ./Simgrade-macos-arm64
+            ```

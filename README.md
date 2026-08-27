@@ -39,7 +39,17 @@ Two prompts on first run, both expected:
 - **Windows Firewall** will ask to allow `wowsimtbc.exe`. Private networks is enough; nothing
   listens outside localhost.
 
-On macOS, right-click → *Open* the first time, since the binary isn't notarised.
+On macOS the download arrives without its executable bit — GitHub strips it from release
+assets — so Finder won't treat it as a program until you set it:
+
+```bash
+cd ~/Downloads
+chmod +x Simgrade-macos-arm64
+xattr -d com.apple.quarantine Simgrade-macos-arm64   # it isn't notarised
+./Simgrade-macos-arm64
+```
+
+After that you can double-click it in Finder too; it opens in Terminal.
 
 Both servers are local only. Stop it by closing the console window, or `Ctrl-C`.
 
