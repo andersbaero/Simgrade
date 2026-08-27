@@ -1,0 +1,112 @@
+name: Build executables
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: Simgrade-windows-x64
+            binary: dist/Simgrade.exe
+          - os: macos-latest
+            artifact: Simgrade-macos-arm64
+            binary: dist/Simgrade
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned: Node's single-executable support is experimental and its
+      # manifest shape has shifted between releases.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.6'
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:exe
+
+      # Launch the binary and wait for the API to answer. A bundle that fails to
+      # start still builds cleanly, so this is the check that actually matters.
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath "${{ matrix.binary }}" -PassThru -NoNewWindow
+          try {
+            $ok = $false
+            foreach ($i in 1..60) {
+              Start-Sleep -Seconds 5
+              try {
+                if ((Invoke-WebRequest "http://localhost:5174/api/state" -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200) { $ok = $true; break }
+              } catch {}
+            }
+            if (-not $ok) { throw "Simgrade did not answer on :5174 within 5 minutes" }
+            Write-Host "Smoke test passed"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          "${{ matrix.binary }}" &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            sleep 5
+            if curl -fsS -o /dev/null http://localhost:5174/api/state; then
+              echo "Smoke test passed"
+              exit 0
+            fi
+          done
+          echo "Simgrade did not answer on :5174 within 5 minutes" >&2
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Name the files per platform
+        run: |
+          mkdir -p release
+          cp artifacts/Simgrade-windows-x64/Simgrade.exe release/Simgrade-windows-x64.exe
+          cp artifacts/Simgrade-macos-arm64/Simgrade      release/Simgrade-macos-arm64
+          ls -lh release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          body: |
+            Download the file for your platform and run it. No install, no Node, nothing else needed.
+
+            On first launch it downloads the wowsims sim engine and item database (~56 MB) into a
+            `bin/` and `data/` folder beside itself, then opens your browser.
+
+            **Windows:** SmartScreen will warn that the publisher is unknown, because the binary
+            is unsigned. Choose *More info → Run anyway*. Windows Firewall will also ask to allow
+            `wowsimtbc.exe`; private networks is enough — nothing listens outside localhost.
+
+            **macOS:** right-click → Open the first time, since the binary is not notarised.

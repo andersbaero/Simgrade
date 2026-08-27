@@ -15,22 +15,59 @@ ranked list of DPS gains — handling the two things hand-simming usually gets w
 Every number is reproducible: same seed, same gear, same DPS, and the tool tells you exactly
 which gems and enchant it assumed.
 
-## Setup
+## Install
+
+Download the file for your platform from the
+[latest release](https://github.com/andersbaero/Simgrade/releases/latest) and run it.
+No Node, no terminal, no install.
+
+| | |
+|---|---|
+| Windows | `Simgrade-windows-x64.exe` |
+| macOS (Apple Silicon) | `Simgrade-macos-arm64` |
+
+On first launch it downloads the wowsims sim engine and item database (~56 MB) into a `bin/` and
+`data/` folder beside itself, then opens your browser. That folder is where your profile and
+results live, so keep the exe somewhere you don't mind it writing — a folder in Documents is
+ideal. If the location isn't writable, it uses `%LOCALAPPDATA%\Simgrade` instead and says so.
+
+Two prompts on first run, both expected:
+
+- **Windows SmartScreen** will say the publisher is unknown — the binary is unsigned. Choose
+  *More info → Run anyway*. (Removing this warning means buying a code-signing certificate,
+  which isn't worth it for a raid tool.)
+- **Windows Firewall** will ask to allow `wowsimtbc.exe`. Private networks is enough; nothing
+  listens outside localhost.
+
+On macOS, right-click → *Open* the first time, since the binary isn't notarised.
+
+Both servers are local only. Stop it by closing the console window, or `Ctrl-C`.
+
+## Running from source
 
 ```bash
 npm install
 npm start
 ```
 
-The first `npm start` downloads the wowsims release binaries (`wowsimcli` and `wowsimtbc`) and
-the item database into `bin/` and `data/`, builds the UI, then launches **both** apps:
+Needs **Node 20.12+**. `npm start` builds the UI if needed and starts the server, which
+bootstraps the sim binaries itself.
 
 | | |
 |---|---|
-| **Upgrade Simmer** | http://localhost:5174 |
+| **Simgrade** | http://localhost:5174 |
 | **wowsims UI** | http://localhost:3333/tbc/ |
 
-Stop both with `Ctrl-C`.
+### Building the executable
+
+```bash
+npm run build:exe      # -> dist/Simgrade[.exe]
+```
+
+Bundles the server with esbuild, embeds the UI as Node SEA assets and injects the blob into a
+copy of the node binary. **It does not cross-compile** — run it on the platform you're targeting.
+`.github/workflows/release.yml` does that on Windows and macOS runners, smoke-tests each binary
+by launching it and waiting for `/api/state`, and attaches both to a GitHub Release on a `v*` tag.
 
 ## Weekly workflow
 
@@ -155,9 +192,13 @@ set and agreed to four decimal places.
 ## Layout
 
 ```
-scripts/setup.mjs     downloads pinned release binaries + db.json
-scripts/start.mjs     one command: setup if needed, build UI, run both apps
+scripts/setup.ts      CLI over server/bootstrap.ts
+scripts/start.mjs     dev launcher: build the UI if needed, run the server
+scripts/build-exe.mjs bundle + embed + inject -> a single executable
 server/
+  bootstrap.ts        fetches the sim binaries and item database on first run
+  paths.ts            resolves install vs. writable state directory
+  staticAssets.ts     serves the UI from disk (dev) or from the exe (packaged)
   itemDb.ts           indexes wowsims' db.json (items, gems, enchants, bosses, zones)
   bench.ts            bag items offered only as hit-target levers
   profile.ts          parses the Export → CLI blob; rebuilds it with new gear
@@ -178,8 +219,9 @@ paste your own profile.
 
 | | |
 |---|---|
-| `npm start` | Set up if needed, then run everything |
-| `npm run setup` | Re-download binaries + database for the pinned wowsims release |
+| `npm start` | Build the UI if needed, then run everything |
+| `npm run build:exe` | Build a single-file executable into `dist/` |
+| `npm run setup` | Re-download the sim binaries + database for the pinned release |
 | `npm run setup -- --latest` | Move to the newest wowsims release |
 | `npm test` | Unit tests plus integration tests against the real `wowsimcli` |
 | `npm run dev:server` / `npm run dev:web` | Watch mode |

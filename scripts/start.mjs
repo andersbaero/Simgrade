@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// One command for the whole thing: fetches the wowsims binaries on first run,
-// builds the UI if needed, then starts this app and the wowsims UI together.
+// Development launcher: build the UI if needed, then run the server, which
+// bootstraps the sim binaries itself and opens the browser.
 
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -8,32 +8,28 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const APP_PORT = process.env.PORT ?? '5174';
 
-function run(command, args) {
-	const result = spawnSync(command, args, { cwd: ROOT, stdio: 'inherit', shell: false });
-	if (result.status !== 0) process.exit(result.status ?? 1);
-}
+// Local tools are invoked as `node <package entry>` rather than through npx.
+// On Windows npx is a .cmd, which spawn cannot launch without a shell.
+const VITE = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+const TSX = path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
-const exe = process.platform === 'win32' ? '.exe' : '';
-const needsSetup = [`bin/wowsimcli${exe}`, `bin/wowsimtbc${exe}`, 'data/db.json'].some(rel => !fs.existsSync(path.join(ROOT, rel)));
-if (needsSetup) {
-	console.log('First run — downloading the wowsims binaries and item database.\n');
-	run(process.execPath, ['scripts/setup.mjs']);
+if (!fs.existsSync(VITE) || !fs.existsSync(TSX)) {
+	console.error("Dependencies are missing. Run 'npm install' first.");
+	process.exit(1);
 }
 
 if (!fs.existsSync(path.join(ROOT, 'web/dist/index.html'))) {
 	console.log('Building the UI…');
-	run('npx', ['vite', 'build']);
+	const build = spawnSync(process.execPath, [VITE, 'build'], { cwd: ROOT, stdio: 'inherit' });
+	if (build.status !== 0) process.exit(build.status ?? 1);
 }
 
-const server = spawn('npx', ['tsx', 'server/index.ts'], { cwd: ROOT, stdio: 'inherit' });
-
-// Give the server a moment to bind before pointing a browser at it.
-setTimeout(() => {
-	const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-	spawn(opener, [`http://localhost:${APP_PORT}`], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
-}, 1500);
+const server = spawn(process.execPath, [TSX, 'server/index.ts'], {
+	cwd: ROOT,
+	stdio: 'inherit',
+	env: { ...process.env, SIMGRADE_OPEN_BROWSER: '1' },
+});
 
 const stop = () => {
 	server.kill();

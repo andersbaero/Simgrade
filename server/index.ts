@@ -2,17 +2,29 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
 
-import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 
 import { GEM_COLOR_NAMES, Profession, STAT_NAMES } from '../shared/wow.js';
 import { Config, loadConfig, saveConfig, resolveHitStat, resolveMetric, hitStatIndex, withSuggestions } from './config.js';
 import { describeStats, loadItemDatabase } from './itemDb.js';
-import { BENCH_PATH, CONFIG_PATH, LAST_RUN_PATH, PROFILE_PATH, RELEASE_PATH, SELECTION_PATH, uiBinary, WEB_DIST } from './paths.js';
+import { ensureRuntime } from './bootstrap.js';
+import {
+	BENCH_PATH,
+	CONFIG_PATH,
+	LAST_RUN_PATH,
+	PROFILE_PATH,
+	RELEASE_PATH,
+	SELECTION_PATH,
+	STATE_DIR,
+	STATE_DIR_IS_FALLBACK,
+	uiBinary,
+} from './paths.js';
+import { loadWebAssets, resolveAsset } from './staticAssets.js';
 import { ParsedProfile, ProfileError, parseProfile } from './profile.js';
 import { RunManager, resolveTargetHitRating } from './run.js';
 import { gearHitRating } from './gearing.js';
 import { setsInGear } from './sets.js';
+import { IS_PACKAGED } from './paths.js';
 
 const PORT = Number(process.env.PORT ?? 5174);
 const WOWSIMS_PORT = Number(process.env.WOWSIMS_PORT ?? 3333);
@@ -239,16 +251,17 @@ app.get('/api/results.csv', async (_request, reply) => {
 	return [header.join(','), ...rows].join('\n');
 });
 
-// Serve the built UI when it exists; in dev the Vite server proxies /api here.
-if (fs.existsSync(WEB_DIST)) {
-	await app.register(fastifyStatic, { root: WEB_DIST });
-	app.setNotFoundHandler((request, reply) => {
-		if (request.url.startsWith('/api')) return reply.code(404).send({ error: 'Not found' });
-		return reply.sendFile('index.html');
-	});
-} else {
-	console.log("  UI not built — run 'npm run build:web' (or use 'npm start', which builds it for you).");
-}
+// Everything that isn't an API route is a UI asset. Unknown paths fall back to
+// index.html so a bare "/" and any client-side route both work.
+app.setNotFoundHandler((request, reply) => {
+	if (request.url.startsWith('/api')) return reply.code(404).send({ error: 'Not found' });
+
+	const asset = resolveAsset(request.url);
+	if (!asset) {
+		return reply.code(503).type('text/plain').send("The UI is not built. Run 'npm run build:web'.");
+	}
+	return reply.type(asset.mime).send(asset.body);
+});
 
 /** True if something is already listening, so we don't fight over the port. */
 function portInUse(port: number): Promise<boolean> {
@@ -276,7 +289,7 @@ async function startWowsimsUI(): Promise<void> {
 
 	const binary = uiBinary();
 	if (!fs.existsSync(binary)) {
-		console.log(`  wowsims UI not found at ${binary} — run 'npm run setup'.`);
+		console.log(`  wowsims UI not found at ${binary}.`);
 		return;
 	}
 	const child = spawn(binary, ['--launch=false', '--nvc', `--host=localhost:${WOWSIMS_PORT}`], { stdio: 'ignore' });
@@ -293,7 +306,43 @@ async function startWowsimsUI(): Promise<void> {
 	});
 }
 
-await startWowsimsUI();
-await app.listen({ port: PORT, host: '127.0.0.1' });
-console.log(`\n  Simgrade         http://localhost:${PORT}`);
-console.log(`  wowsims UI       http://localhost:${WOWSIMS_PORT}/tbc/\n`);
+/** Opens the default browser at the app, for the double-click case. */
+function openBrowser(url: string): void {
+	const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+	try {
+		spawn(opener, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
+	} catch {
+		/* the URL is printed either way */
+	}
+}
+
+async function main(): Promise<void> {
+	console.log(`\n  Simgrade`);
+	if (STATE_DIR_IS_FALLBACK) console.log(`  Saving data to ${STATE_DIR} (the install folder is not writable).`);
+
+	// A packaged build has no npm, so it fetches its own sim binaries here.
+	try {
+		await ensureRuntime({ onProgress: message => console.log(`  ${message}`) });
+	} catch (err) {
+		console.error(`\n  Setup failed: ${(err as Error).message}`);
+		console.error('  Check your internet connection and start Simgrade again.\n');
+		process.exit(1);
+	}
+
+	if (loadWebAssets().size === 0) {
+		console.log("  UI not built — run 'npm run build:web' (or 'npm start', which builds it for you).");
+	}
+
+	await startWowsimsUI();
+	await app.listen({ port: PORT, host: '127.0.0.1' });
+
+	console.log(`\n  Simgrade         http://localhost:${PORT}`);
+	console.log(`  wowsims UI       http://localhost:${WOWSIMS_PORT}/tbc/\n`);
+
+	if (IS_PACKAGED || process.env.SIMGRADE_OPEN_BROWSER === '1') openBrowser(`http://localhost:${PORT}`);
+}
+
+main().catch((err: unknown) => {
+	console.error(`\n  Simgrade failed to start: ${err instanceof Error ? err.message : String(err)}\n`);
+	process.exit(1);
+});

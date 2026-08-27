@@ -4,19 +4,19 @@
 	"private": true,
 	"type": "module",
 	"engines": {
-		"node": ">=20"
+		"node": ">=20.12"
 	},
 	"scripts": {
-		"setup": "node scripts/setup.mjs",
+		"setup": "node node_modules/tsx/dist/cli.mjs scripts/setup.ts",
 		"build:web": "vite build",
 		"start": "node scripts/start.mjs",
 		"dev:server": "tsx watch server/index.ts",
 		"dev:web": "vite",
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"build:exe": "node scripts/build-exe.mjs"
 	},
 	"dependencies": {
-		"@fastify/static": "^7.0.4",
 		"fastify": "^4.28.1"
 	},
 	"devDependencies": {
@@ -24,6 +24,7 @@
 		"@types/react": "^18.3.3",
 		"@types/react-dom": "^18.3.0",
 		"@vitejs/plugin-react": "^4.3.1",
+		"postject": "^1.0.0-alpha.6",
 		"react": "^18.3.1",
 		"react-dom": "^18.3.1",
 		"tsx": "^4.16.2",

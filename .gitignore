@@ -2,6 +2,10 @@ node_modules/
 web/dist/
 *.log
 
+# Executable build outputs
+build/
+dist/
+
 # Downloaded per-install by `npm run setup` (52 MB of binaries + a 3 MB database),
 # pinned by data/release.json so any clone reproduces the same versions.
 bin/
