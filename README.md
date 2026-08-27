@@ -24,7 +24,7 @@ No Node, no terminal, no install.
 | | |
 |---|---|
 | Windows | `Simgrade-windows-x64.exe` |
-| macOS (Apple Silicon) | `Simgrade-macos-arm64` |
+| macOS (Apple Silicon) | `Simgrade-macos-arm64.zip` |
 
 On first launch it downloads the wowsims sim engine and item database (~56 MB) into a `bin/` and
 `data/` folder beside itself, then opens your browser. That folder is where your profile and
@@ -39,17 +39,10 @@ Two prompts on first run, both expected:
 - **Windows Firewall** will ask to allow `wowsimtbc.exe`. Private networks is enough; nothing
   listens outside localhost.
 
-On macOS the download arrives without its executable bit — GitHub strips it from release
-assets — so Finder won't treat it as a program until you set it:
-
-```bash
-cd ~/Downloads
-chmod +x Simgrade-macos-arm64
-xattr -d com.apple.quarantine Simgrade-macos-arm64   # it isn't notarised
-./Simgrade-macos-arm64
-```
-
-After that you can double-click it in Finder too; it opens in Terminal.
+On macOS, unzip it — Safari does that on download — and run `Simgrade`. The zip is what carries
+the executable bit through; GitHub strips it from bare release assets. If macOS says the developer
+cannot be verified, right-click → *Open*, or clear the flag with
+`xattr -d com.apple.quarantine Simgrade`.
 
 Both servers are local only. Stop it by closing the console window, or `Ctrl-C`.
 

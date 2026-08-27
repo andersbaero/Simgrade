@@ -67,14 +67,7 @@ The rule that holds for all of these: anything that is not a full
 else alone. That is what keeps the guarantee the tool rests on — between
 baseline and candidate, only the gear differs.
 
-## 3. Ship the macOS binary zipped
-
-GitHub strips the executable bit from release assets, so the bare macOS binary downloads as
-`-rw-r--r--` and needs a `chmod +x` before it will run — verified against the real v1.0.0 asset.
-Zipping it in the release job would carry the bit through, and macOS auto-expands a `.zip` on
-download, removing the step entirely. The Windows `.exe` needs no such thing and should stay bare.
-
-## 4. Repository hygiene
+## 3. Repository hygiene
 
 Gaps that only matter now that other people can download this.
 

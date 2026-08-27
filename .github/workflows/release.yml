@@ -17,9 +17,11 @@ jobs:
           - os: windows-latest
             artifact: Simgrade-windows-x64
             binary: dist/Simgrade.exe
+            asset: dist/Simgrade.exe
           - os: macos-latest
             artifact: Simgrade-macos-arm64
             binary: dist/Simgrade
+            asset: dist/Simgrade-macos-arm64.zip
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -79,10 +81,19 @@ jobs:
           echo "Simgrade did not answer on :5174 within 5 minutes" >&2
           exit 1
 
+      # Zipped here rather than in the release job: upload-artifact does not
+      # preserve permissions, so the executable bit has to be sealed inside an
+      # archive while it still exists. Also cuts the download from 89 to 28 MB.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: cd dist && zip -q Simgrade-macos-arm64.zip Simgrade
+
+      # Windows stays a bare .exe — no permission bit to lose, and download-and
+      # -double-click beats making someone extract an archive first.
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.binary }}
+          path: ${{ matrix.asset }}
           if-no-files-found: error
 
   release:
@@ -97,8 +108,8 @@ jobs:
       - name: Name the files per platform
         run: |
           mkdir -p release
-          cp artifacts/Simgrade-windows-x64/Simgrade.exe release/Simgrade-windows-x64.exe
-          cp artifacts/Simgrade-macos-arm64/Simgrade      release/Simgrade-macos-arm64
+          cp artifacts/Simgrade-windows-x64/Simgrade.exe             release/Simgrade-windows-x64.exe
+          cp artifacts/Simgrade-macos-arm64/Simgrade-macos-arm64.zip release/Simgrade-macos-arm64.zip
           ls -lh release
 
       - uses: softprops/action-gh-release@v2
@@ -115,10 +126,6 @@ jobs:
             is unsigned. Choose *More info → Run anyway*. Windows Firewall will also ask to allow
             `wowsimtbc.exe`; private networks is enough — nothing listens outside localhost.
 
-            **macOS:** the download loses its executable bit, so set it before running:
-
-            ```bash
-            chmod +x Simgrade-macos-arm64
-            xattr -d com.apple.quarantine Simgrade-macos-arm64
-            ./Simgrade-macos-arm64
-            ```
+            **macOS:** unzip it (Safari does this for you) and run `Simgrade`. If macOS says the
+            developer cannot be verified, right-click it and choose *Open*, or clear the flag with
+            `xattr -d com.apple.quarantine Simgrade`.
