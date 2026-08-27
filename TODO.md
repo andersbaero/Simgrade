@@ -10,15 +10,20 @@ Verified on macOS: runs from an arbitrary directory, bootstraps its own 56 MB of
 serves the UI, completes a sim, and falls back to the OS app-data directory when its own folder
 is read-only.
 
+v1.0.0 is published with a Windows and a macOS binary. CI proved on Windows that the zips
+extract via bsdtar, all 65 tests pass running real sims through `wowsimcli.exe`, postject injects
+into `node.exe`, and the packaged exe binds and answers `/api/state`.
+
 Still open:
 
-- **Run it on Windows.** The build has never executed on a Windows runner. Tag a release, let CI
-  build it, and try the artifact on a real machine.
+- **Try the artifact on real hardware.** CI's smoke test only proves it starts and serves. Nobody
+  has clicked through a full run on an actual Windows desktop, or seen what SmartScreen does
+  outside a runner.
 - **Intel Macs** would need a `macos-13` matrix entry. Skip until someone asks.
+- **Linux** is unbuilt. `assetSuffix()` already handles it; just add a matrix entry if wanted.
 - **Code signing** would remove the SmartScreen warning (~$100–400/yr). Probably never worth it.
 - **A console window opens** on double-click. It is where first-run progress and errors appear,
   so this is deliberate — but if it ever grates, a Windows GUI-subsystem shim is the fix.
-- **Linux** is unbuilt. `assetSuffix()` already handles it; just add a matrix entry if wanted.
 
 ## 2. Import gear from more than the wowsims CLI export
 
@@ -62,3 +67,28 @@ The rule that holds for all of these: anything that is not a full
 else alone. That is what keeps the guarantee the tool rests on — between
 baseline and candidate, only the gear differs.
 
+## 3. Ship the macOS binary zipped
+
+GitHub strips the executable bit from release assets, so the bare macOS binary downloads as
+`-rw-r--r--` and needs a `chmod +x` before it will run — verified against the real v1.0.0 asset.
+Zipping it in the release job would carry the bit through, and macOS auto-expands a `.zip` on
+download, removing the step entirely. The Windows `.exe` needs no such thing and should stay bare.
+
+## 4. Repository hygiene
+
+Gaps that only matter now that other people can download this.
+
+- **No LICENSE file.** The repo is public and unlicensed, which technically means nobody has
+  permission to use or fork it — awkward for something you're handing to guildmates. MIT matches
+  what you used on WarlockSim.
+- **CI only runs on `v*` tags.** A push to `main` runs nothing, so both bugs this session were
+  caught *at release time*, after the tag was already cut. A small `test.yml` on push and pull
+  request (`npm run setup` + `npm test`) would catch them before tagging instead.
+- **CI re-downloads 56 MB every run.** `actions/cache` on `bin/` and `data/db.json`, keyed by the
+  hash of `data/release.json`, would cut a couple of minutes off each job.
+- **No screenshots in the README.** For someone deciding whether to download a 73 MB unsigned
+  exe, one picture of the ranked results table is worth more than the prose above it.
+- **Commits don't link to your GitHub account.** They are authored as
+  `andersbaero@Anders-sin-MacBook-Pro.local`, git's hostname-derived fallback, because no
+  `user.email` is configured. Fixable going forward with `git config user.email`, or across
+  history with a rebase if it matters.
