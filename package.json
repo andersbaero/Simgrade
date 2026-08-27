@@ -1,0 +1,35 @@
+{
+	"name": "simgrade",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"setup": "node scripts/setup.mjs",
+		"build:web": "vite build",
+		"start": "node scripts/start.mjs",
+		"dev:server": "tsx watch server/index.ts",
+		"dev:web": "vite",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@fastify/static": "^7.0.4",
+		"fastify": "^4.28.1"
+	},
+	"devDependencies": {
+		"@types/node": "^20.14.10",
+		"@types/react": "^18.3.3",
+		"@types/react-dom": "^18.3.0",
+		"@vitejs/plugin-react": "^4.3.1",
+		"react": "^18.3.1",
+		"react-dom": "^18.3.1",
+		"tsx": "^4.16.2",
+		"typescript": "^5.5.3",
+		"vite": "^5.3.3",
+		"vitest": "^2.0.3"
+	},
+	"description": "Ranks TBC gear upgrades by simming them, with tier-set and hit-cap awareness."
+}

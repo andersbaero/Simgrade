@@ -1,0 +1,20 @@
+node_modules/
+web/dist/
+*.log
+
+# Downloaded per-install by `npm run setup` (52 MB of binaries + a 3 MB database),
+# pinned by data/release.json so any clone reproduces the same versions.
+bin/
+data/db.json
+
+# Your character and your run state — personal, and meaningless to anyone else.
+data/profile.json
+data/selection.json
+data/bench.json
+data/config.json
+data/last-run.json
+data/cache/
+
+# Kept in the repo on purpose:
+#   data/profile.example.json  demo profile the tests load as a fixture
+#   data/release.json          the pinned wowsims release
