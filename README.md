@@ -128,7 +128,13 @@ Configured in the **Settings** tab.
   gems are yellow).
 - If it is **above** the target, hit gems are traded back down for normal ones while staying on
   target.
-- Any swap that would deactivate your meta gem is rejected. If the target can't be reached
+- **Your meta gem is always made active.** If its colour requirement isn't met — you run
+  Chaotic Skyfire Diamond but own no blue sockets, say — the gem you picked for that colour in
+  settings is forced into a socket of another colour until the requirement is satisfied. An
+  inactive meta is a flat loss of its entire stat line, which dwarfs the socket bonus given up.
+  It picks the cheapest sockets first: items with no socket bonus, then ones whose bonus is
+  already forfeited, and it avoids displacing hit gems. Each forced gem is listed on the row.
+- Any swap that would deactivate your meta gem is rejected. If the hit target can't be reached
   without breaking it, the row says how far short it fell and why.
 - A socket colour you have no gem configured for borrows another colour's gem rather than being
   left empty, and says so.

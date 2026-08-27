@@ -12,9 +12,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 export function useCombobox<T>(
 	computeMatches: (query: string) => T[],
 	commit: (item: T) => void,
-	options: { closeOnCommit?: boolean } = {},
+	options: { closeOnCommit?: boolean; clearOnEnter?: boolean } = {},
 ) {
-	const { closeOnCommit = true } = options;
+	const { closeOnCommit = true, clearOnEnter = false } = options;
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState('');
 	const [highlight, setHighlight] = useState(0);
@@ -62,7 +62,12 @@ export function useCombobox<T>(
 			if (!open) return;
 			event.preventDefault();
 			const item = matches[highlight];
-			if (item) choose(item);
+			if (!item) return;
+			choose(item);
+			// Enter means "done with this search" — clear so the next one can be
+			// typed straight away. Clicking does not clear, because picking several
+			// items out of one result list is the other half of the workflow.
+			if (!closeOnCommit && clearOnEnter) setQuery('');
 		} else if (event.key === 'Escape') {
 			close();
 		}

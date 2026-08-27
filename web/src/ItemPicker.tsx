@@ -127,8 +127,8 @@ export default function ItemPicker({ selection, profile, onSelectionChange }: Pr
 					{scope.controls}
 				</div>
 				<p className="small muted" style={{ marginBottom: 0, marginTop: 10 }}>
-					Type to search, ↑↓ to move, Enter to add. The list stays open so you can add several in a row. Clicking an item already on the list
-					removes it.
+					Type to search, ↑↓ to move, Enter to add — the box clears so you can type the next one straight away. Clicking adds without clearing,
+					for picking several out of one result list; clicking something already added removes it.
 				</p>
 			</div>
 

@@ -8,7 +8,7 @@
 import { GemColor, gemEligibleForSocket, gemMatchesSocket, ItemSlot, ItemSpec, ItemType } from '../shared/wow.js';
 import { Config, SOCKET_COLOR_OF, SocketKey } from './config.js';
 import { addStats, ItemDatabase, RawItem, StatMap } from './itemDb.js';
-import { isMetaGemActive, metaGemConditionDescription } from './metaGems.js';
+import { isMetaGemActive, MetaColorKey, metaDeficit, metaGemConditionDescription } from './metaGems.js';
 
 export type Gear = (ItemSpec | null)[];
 
@@ -244,6 +244,97 @@ export function applyGemPolicy(
 			});
 		});
 	}
+
+	// 1c. Force the meta gem's requirements to be met, even when the gear has no
+	// socket of the colour it wants. An inactive meta gem is a flat loss of its
+	// whole stat line, which is worth far more than the socket bonus given up by
+	// putting an off-colour gem in. The gem used is whatever is configured for
+	// that colour in the gem settings.
+	const forceMetaColors = () => {
+		const metaGemId = equippedMetaGemId(db, gear);
+		if (!metaGemId || isMetaGemActive(metaGemId, allGemColors(db, gear))) return;
+
+		const requirement = metaGemConditionDescription(metaGemId);
+		// Bounded by the number of sockets: every pass fills one.
+		for (let pass = listSockets(db, gear).length; pass > 0; pass--) {
+			if (isMetaGemActive(metaGemId, allGemColors(db, gear))) return;
+
+			const deficit = metaDeficit(metaGemId, allGemColors(db, gear));
+			const needed = (['blue', 'red', 'yellow'] as MetaColorKey[])
+				.filter(key => deficit[key] > 0)
+				.sort((a, b) => deficit[b] - deficit[a])[0];
+			if (!needed) return;
+
+			const gemId = config.gems.normal[needed];
+			if (!gemId) {
+				warnings.push(`Meta gem ${gemName(db, metaGemId)} needs ${deficit[needed]} more ${needed} gem(s), but no ${needed} gem is configured.`);
+				return;
+			}
+
+			// The configured gem has to actually count as that colour — a red gem
+			// chosen for the blue socket will never satisfy a blue requirement.
+			const gemColor = (db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor;
+			if (!gemMatchesSocket(gemColor, SOCKET_COLOR_OF[needed])) {
+				warnings.push(
+					`Meta gem ${gemName(db, metaGemId)} needs a ${needed} gem, but the configured ${needed} gem (${gemName(db, gemId)}) does not count as ${needed}.`,
+				);
+				return;
+			}
+
+			const socket = pickSocketToSacrifice(needed, gemId);
+			if (!socket) {
+				warnings.push(`Meta gem ${gemName(db, metaGemId)} is NOT active — no socket left to force a ${needed} gem into. ${requirement}`);
+				return;
+			}
+
+			const from = getGem(gear, socket);
+			setGem(gear, socket, gemId);
+			changes.push({
+				slot: socket.slot,
+				socketIndex: socket.socketIndex,
+				fromGemId: from,
+				toGemId: gemId,
+				description: `${slotLabel(socket.slot)}: ${gemName(db, from)} → ${gemName(db, gemId)} (forced ${needed} for ${gemName(db, metaGemId)})`,
+			});
+		}
+	};
+
+	/**
+	 * The cheapest socket to give up for a meta colour: one whose item has no
+	 * socket bonus at all, then one whose bonus is already lost, and only then a
+	 * socket that still earns one. Sockets already counting toward the colour are
+	 * useless here, and hit gems are left alone where possible.
+	 */
+	const pickSocketToSacrifice = (needed: MetaColorKey, gemId: number): Socket | null => {
+		const wanted = SOCKET_COLOR_OF[needed];
+		const candidates = listSockets(db, gear).filter(socket => {
+			const current = getGem(gear, socket);
+			if (current === gemId) return false;
+			const currentColor = (db.gem(current)?.color ?? GemColor.Unknown) as GemColor;
+			// Replacing a gem that already counts would not change the tally.
+			return !gemMatchesSocket(currentColor, wanted);
+		});
+
+		const cost = (socket: Socket): number => {
+			const item = db.item(gear[socket.slot]!.id)!;
+			const hasBonus = Object.keys(db.socketBonusStats(item)).length > 0;
+			if (!hasBonus) return 0;
+			if (!hasSocketBonus(db, item, gear[socket.slot]!.gems ?? [])) return 1;
+			return 2;
+		};
+
+		return (
+			candidates.sort((a, b) => {
+				const byCost = cost(a) - cost(b);
+				if (byCost !== 0) return byCost;
+				// Prefer displacing a plain gem over one carrying hit.
+				const isHit = (socket: Socket) => (getGem(gear, socket) === config.gems.hit[socket.key] ? 1 : 0);
+				return isHit(a) - isHit(b) || a.slot - b.slot || a.socketIndex - b.socketIndex;
+			})[0] ?? null
+		);
+	};
+
+	forceMetaColors();
 
 	// 2. Order sockets by the configured swap priority so the choice is deterministic.
 	const priority = new Map(config.hitSwapPriority.map((key, idx) => [key, idx]));

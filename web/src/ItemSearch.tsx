@@ -34,7 +34,7 @@ export default function ItemSearch({ items, selected, placeholder, onToggle, onA
 		[items],
 	);
 
-	const search = useCombobox<CandidateItem>(computeMatches, item => onToggle(item.id), { closeOnCommit: false });
+	const search = useCombobox<CandidateItem>(computeMatches, item => onToggle(item.id), { closeOnCommit: false, clearOnEnter: true });
 	const shown = search.matches.slice(0, MAX_RESULTS);
 
 	return (

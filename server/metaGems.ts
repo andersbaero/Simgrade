@@ -57,6 +57,36 @@ export function countGemColors(gemColors: GemColor[]): { red: number; yellow: nu
 	};
 }
 
+export type MetaColorKey = 'red' | 'yellow' | 'blue';
+
+/**
+ * How many more gems of each colour the meta gem still needs. Zero everywhere
+ * means it is active. Used to repair an unmet meta by forcing the missing
+ * colour into whatever socket is available.
+ */
+export function metaDeficit(metaGemId: number, gemColors: GemColor[]): Record<MetaColorKey, number> {
+	const cond = META_GEM_CONDITIONS[metaGemId];
+	const deficit: Record<MetaColorKey, number> = { red: 0, yellow: 0, blue: 0 };
+	if (!cond) return deficit;
+
+	const counts = countGemColors(gemColors);
+	deficit.red = Math.max(0, cond.minRed - counts.red);
+	deficit.yellow = Math.max(0, cond.minYellow - counts.yellow);
+	deficit.blue = Math.max(0, cond.minBlue - counts.blue);
+
+	// "More red than blue" style conditions need one more of the greater colour
+	// than the lesser one currently has.
+	if (cond.compareGreater !== GemColor.Unknown) {
+		const asKey = (color: GemColor): MetaColorKey =>
+			color === GemColor.Red ? 'red' : color === GemColor.Yellow ? 'yellow' : 'blue';
+		const greater = asKey(cond.compareGreater);
+		const lesser = asKey(cond.compareLesser);
+		deficit[greater] = Math.max(deficit[greater], Math.max(0, counts[lesser] - counts[greater] + 1));
+	}
+
+	return deficit;
+}
+
 /**
  * Whether the meta gem is activated by the rest of the gem layout. Unknown meta
  * gems are treated as always-active, matching wowsims' fallback.

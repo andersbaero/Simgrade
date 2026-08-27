@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { GemColor, ItemSlot, Stat } from '../shared/wow.js';
 import { Config, suggestGems } from '../server/config.js';
 import { applyGemPolicy, gearHitRating, metaGemActive } from '../server/gearing.js';
-import { countGemColors, isMetaGemActive } from '../server/metaGems.js';
+import { countGemColors, isMetaGemActive, metaDeficit } from '../server/metaGems.js';
 import { baseConfig, db, profile } from './fixture.js';
 
 const RELENTLESS_EARTHSTORM = 32409; // requires 2 red, 2 yellow, 2 blue
@@ -167,5 +167,82 @@ describe('gem defaults from actual socket usage', () => {
 
 		const suggested = suggestGems(db, { ...profile, equipment: gear }, 'melee');
 		expect(suggested.normal.yellow).toBe(BOLD_CRIMSON_SPINEL);
+	});
+});
+
+describe('forcing an unmet meta gem', () => {
+	const CHAOTIC_SKYFIRE = 34220; // requires at least 2 blue gems
+	const SOVEREIGN_AMETHYST = 32211; // purple — counts as both red and blue
+	const BRILLIANT_LIONSEYE = 32204; // yellow
+
+	/**
+	 * Gear with no blue socket anywhere and every other socket emptied — the case
+	 * where a blue-hungry meta gem cannot be satisfied by normal socketing.
+	 */
+	const gearWithoutBlueSockets = () =>
+		profile.equipment.map(item => {
+			if (!item) return null;
+			const dbItem = db.item(item.id);
+			const sockets = dbItem ? db.sockets(dbItem) : [];
+			if (sockets.includes(GemColor.Blue)) return null; // drop the item, not just its gems
+			return { ...item, gems: sockets.map(color => (color === GemColor.Meta ? CHAOTIC_SKYFIRE : 0)) };
+		});
+
+	const configWith = (blueGem: number): Config => ({
+		...baseConfig,
+		gems: {
+			meta: CHAOTIC_SKYFIRE,
+			// Red gems in every socket colour, the way someone actually gems.
+			normal: { red: BOLD_CRIMSON_SPINEL, yellow: BOLD_CRIMSON_SPINEL, blue: blueGem, prismatic: BOLD_CRIMSON_SPINEL },
+			hit: { ...baseConfig.gems.hit },
+		},
+	});
+
+	it('reports how many gems of each colour a meta gem still needs', () => {
+		expect(metaDeficit(CHAOTIC_SKYFIRE, [GemColor.Red, GemColor.Red])).toEqual({ red: 0, yellow: 0, blue: 2 });
+		expect(metaDeficit(CHAOTIC_SKYFIRE, [GemColor.Blue, GemColor.Purple])).toEqual({ red: 0, yellow: 0, blue: 0 });
+	});
+
+	it('handles "more X than Y" conditions too', () => {
+		// Mystical Skyfire Diamond: more blue gems than yellow.
+		expect(metaDeficit(25893, [GemColor.Yellow, GemColor.Yellow])).toEqual({ red: 0, yellow: 0, blue: 3 });
+		expect(metaDeficit(25893, [GemColor.Blue])).toEqual({ red: 0, yellow: 0, blue: 0 });
+	});
+
+	it('forces the configured blue gem into other sockets until the meta activates', () => {
+		const config = configWith(SOVEREIGN_AMETHYST);
+		const gear = gearWithoutBlueSockets();
+		// Precondition: nothing here would ever be socketed blue on its own.
+		const socketColors = gear.flatMap(spec => (spec ? db.sockets(db.item(spec.id)!) : []));
+		expect(socketColors).not.toContain(GemColor.Blue);
+
+		const result = applyGemPolicy(db, gear, config, MELEE_HIT, 0);
+
+		expect(metaGemActive(db, result.gear).active).toBe(true);
+		expect(result.changes.some(change => change.description.includes('forced blue'))).toBe(true);
+		expect(result.changes.some(change => change.toGemId === SOVEREIGN_AMETHYST)).toBe(true);
+	});
+
+	it('uses exactly the gem chosen in settings for the missing colour', () => {
+		const config = configWith(SOVEREIGN_AMETHYST);
+		const forced = applyGemPolicy(db, gearWithoutBlueSockets(), config, MELEE_HIT, 0).changes.filter(change =>
+			change.description.includes('forced blue'),
+		);
+		expect(forced.length).toBeGreaterThan(0);
+		expect(forced.every(change => change.toGemId === SOVEREIGN_AMETHYST)).toBe(true);
+	});
+
+	it('says so rather than guessing when the configured gem cannot satisfy the colour', () => {
+		// A yellow gem chosen for the blue socket can never count as blue.
+		const config = configWith(BRILLIANT_LIONSEYE);
+		const result = applyGemPolicy(db, gearWithoutBlueSockets(), config, MELEE_HIT, 0);
+
+		expect(metaGemActive(db, result.gear).active).toBe(false);
+		expect(result.warnings.join(' ')).toMatch(/does not count as blue/);
+	});
+
+	it('leaves an already-satisfied meta gem alone', () => {
+		const result = applyGemPolicy(db, profile.equipment, baseConfig, MELEE_HIT, 0);
+		expect(result.changes.some(change => change.description.includes('forced'))).toBe(false);
 	});
 });
