@@ -33,6 +33,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # The test suite runs real sims against wowsimcli and reads the item
+      # database, neither of which is in the repo. This also exercises the
+      # download-and-extract path on each platform before anything is built.
+      - run: npm run setup
+
       - run: npm test
       - run: npm run build:exe
 
