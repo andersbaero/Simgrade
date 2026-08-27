@@ -12,6 +12,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { build as esbuild } from 'esbuild';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, 'build');
 const DIST = path.join(ROOT, 'dist');
@@ -19,7 +21,9 @@ const WEB_DIST = path.join(ROOT, 'web', 'dist');
 
 const IS_WINDOWS = process.platform === 'win32';
 const EXE_NAME = IS_WINDOWS ? 'Simgrade.exe' : 'Simgrade';
-const ESBUILD = path.join(ROOT, 'node_modules', 'esbuild', 'bin', 'esbuild');
+// vite and postject are plain JS, so they run through `node`. esbuild ships a
+// native binary at bin/esbuild on unix and a shim on Windows, so it goes
+// through its JS API instead of being exec'd.
 const VITE = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
 const POSTJECT = path.join(ROOT, 'node_modules', 'postject', 'dist', 'cli.js');
 
@@ -75,27 +79,29 @@ console.log(`     ${Object.keys(assets).length} UI assets, wowsims pinned to ${v
 
 console.log('2/5  Bundling the server…');
 const bundle = path.join(BUILD, 'server.cjs');
-run(
-	ESBUILD,
-	[
-		'server/index.ts',
-		'--bundle',
-		'--platform=node',
-		'--target=node20',
-		'--format=cjs',
-		`--outfile=${bundle}`,
-		// Define values are JS expressions. spawnSync passes them without a shell,
-		// so one level of JSON.stringify is exactly right — two would embed the quotes.
-		'--define:__PACKAGED__=true',
-		`--define:__WEB_ASSET_KEYS__=${JSON.stringify(Object.keys(assets))}`,
-		`--define:__PINNED_VERSION__=${JSON.stringify(version)}`,
-		// The source-run branch in paths.ts is dead here, but CJS output has no
-		// import.meta; defining it keeps esbuild quiet about the unused reference.
-		'--define:import.meta.url=""',
-		'--log-level=warning',
-	],
-	'esbuild',
-);
+try {
+	await esbuild({
+		entryPoints: [path.join(ROOT, 'server', 'index.ts')],
+		outfile: bundle,
+		bundle: true,
+		platform: 'node',
+		target: 'node20',
+		format: 'cjs',
+		logLevel: 'warning',
+		// Each value is a JS expression, so strings need their quotes.
+		define: {
+			__PACKAGED__: 'true',
+			__WEB_ASSET_KEYS__: JSON.stringify(Object.keys(assets)),
+			__PINNED_VERSION__: JSON.stringify(version),
+			// The source-run branch in paths.ts is dead here, but CommonJS has no
+			// import.meta; defining it keeps esbuild quiet about the reference.
+			'import.meta.url': '""',
+		},
+	});
+} catch (err) {
+	console.error(`\nesbuild failed: ${err.message}`);
+	process.exit(1);
+}
 console.log(`     ${(fs.statSync(bundle).size / 1e6).toFixed(1)} MB bundle`);
 
 console.log('3/5  Generating the SEA blob…');
