@@ -214,3 +214,23 @@ describe('enchants on swapped-in items', () => {
 		expect(notes[0]).toMatch(/Head: Onslaught Battle-Helm (enchanted with|left unenchanted)/);
 	});
 });
+
+describe('ranged enchants', () => {
+	const ACCURASCOPE = 2523; // ItemTypeRanged enchant
+
+	it('applies a scope to bows, crossbows and guns', () => {
+		const scopeable = [...db.items.values()].filter(
+			item => item.type === 14 && [1, 2, 3].includes(item.rangedWeaponType ?? 0) && (item.quality ?? 0) === 4,
+		);
+		expect(scopeable.length).toBeGreaterThan(10);
+		expect(scopeable.every(item => enchantApplies(db, ACCURASCOPE, item))).toBe(true);
+	});
+
+	it('refuses a scope on relics and thrown weapons that share the ranged slot', () => {
+		// Idol / libram / totem / thrown — wowsims restricts scopes to the three
+		// projectile types, and this half of the rule was missing.
+		const notScopeable = [...db.items.values()].filter(item => item.type === 14 && [4, 6, 7, 8].includes(item.rangedWeaponType ?? 0));
+		expect(notScopeable.length).toBeGreaterThan(10);
+		expect(notScopeable.some(item => enchantApplies(db, ACCURASCOPE, item))).toBe(false);
+	});
+});

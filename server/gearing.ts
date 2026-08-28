@@ -5,7 +5,7 @@
 //            + enchant + gems + socket bonus (only when every socket matches)
 // so the hit rating we solve against is the hit rating the sim will see.
 
-import { GemColor, gemEligibleForSocket, gemMatchesSocket, ItemSlot, ItemSpec, ItemType } from '../shared/wow.js';
+import { GemColor, gemEligibleForSocket, gemMatchesSocket, ItemSlot, ItemSpec, ItemType, RangedWeaponType } from '../shared/wow.js';
 import { Config, META_COLOR_OF, MetaColorKey } from './config.js';
 import { addStats, ItemDatabase, RawItem, StatMap } from './itemDb.js';
 import { isMetaGemActive, metaDeficit, metaGemConditionDescription } from '../shared/metaGems.js';
@@ -454,7 +454,13 @@ export function enchantApplies(db: ItemDatabase, effectId: number, item: RawItem
 		if ((enchantType === EnchantTypeOffHand) !== itemIsOffHandOnly) return false;
 	}
 
-	if (item.rangedWeaponType && item.rangedWeaponType !== 5 && (enchant.type ?? 0) !== ItemType.Ranged) return false;
+	// A scope only goes on a bow, crossbow or gun — not a thrown weapon, idol,
+	// totem or libram, even though those all share the ranged slot.
+	const RANGED_SCOPEABLE = [RangedWeaponType.Bow, RangedWeaponType.Crossbow, RangedWeaponType.Gun];
+	if ((enchant.type ?? 0) === ItemType.Ranged && !RANGED_SCOPEABLE.includes((item.rangedWeaponType ?? 0) as RangedWeaponType)) return false;
+
+	// A relic or thrown weapon takes nothing but a ranged enchant.
+	if (item.rangedWeaponType && item.rangedWeaponType !== RangedWeaponType.Wand && (enchant.type ?? 0) !== ItemType.Ranged) return false;
 	return true;
 }
 
