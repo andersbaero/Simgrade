@@ -145,11 +145,11 @@ export default function ConfigPanel({ config, profile, onSaved }: Props) {
 			</div>
 
 			<div className="panel">
-				<h2>Meta gem requirements</h2>
+				<h2>Colour gems</h2>
 				<p className="muted small" style={{ marginTop: 0 }}>
-					Used only when your meta gem’s colour requirement can’t be met otherwise — Chaotic Skyfire Diamond wants two blue gems, for instance,
-					and you may own no blue sockets. Enough of these are forced in to switch the meta on, preferring sockets where they cost nothing. An
-					inactive meta loses its whole stat line, which dwarfs a socket bonus.
+					Gems that <em>count as</em> each colour, used for the two jobs where colour matters. First, keeping your meta gem active: Chaotic Skyfire
+					Diamond wants two blue gems and you may own no blue sockets, so enough of these are forced in to switch it on. Second, socket-bonus
+					matching: with that setting on, every socketed candidate is also simmed gemmed to match, and whichever layout wins is the one reported.
 					{metaRequirement && <> Yours: <strong style={{ color: 'var(--text)' }}>{metaRequirement}</strong></>}
 				</p>
 				<div className="grid" style={{ gridTemplateColumns: 'minmax(150px, auto) 1fr 2fr', alignItems: 'start', rowGap: 14 }}>
@@ -200,6 +200,14 @@ export default function ConfigPanel({ config, profile, onSaved }: Props) {
 					<label className="row small" style={{ gap: 6, paddingBottom: 8 }}>
 						<input type="checkbox" checked={draft.pinSeed} onChange={event => patch({ pinSeed: event.target.checked })} />
 						Pin the seed
+					</label>
+					<label className="row small" style={{ gap: 6, paddingBottom: 8 }}>
+						<input
+							type="checkbox"
+							checked={draft.trySocketBonuses}
+							onChange={event => patch({ trySocketBonuses: event.target.checked })}
+						/>
+						Also try matching socket colours
 					</label>
 					<label className="row small" style={{ gap: 6, paddingBottom: 8 }}>
 						<input

@@ -15,7 +15,7 @@ import { CandidateResult, RunFailure, RunProgress } from '../shared/wow.js';
 import { hitFixVariants } from './bench.js';
 import { buildCandidates, Candidate, Placement, placeItems } from './candidates.js';
 import { Config, hitStatIndex, ratingPerPercent, resolveHitStat, resolveMetric } from './config.js';
-import { applyGemPolicy, describeEnchants, describeGemChanges, Gear, gearHitRating } from './gearing.js';
+import { applyGemPolicy, describeEnchants, describeGemChanges, Gear, gearHitRating, matchSocketGems } from './gearing.js';
 import { ItemDatabase } from './itemDb.js';
 import type { ParsedProfile } from './profile.js';
 import { withEquipment } from './profile.js';
@@ -38,6 +38,8 @@ interface Variant {
 	candidate: Candidate;
 	placements: Placement[];
 	benchNote?: string;
+	/** Gem the placed items to match their sockets, earning the socket bonus. */
+	matchSockets?: boolean;
 }
 
 interface BuiltVariant {
@@ -143,7 +145,7 @@ export class RunManager {
 
 		const variants: Variant[] = candidates.flatMap(candidate => {
 			const fixes = hitFixVariants(db, rawGear, candidate.placements, benchIds, config, hitIdx, target);
-			return [
+			const base: Variant[] = [
 				{ key: candidate.key, candidate, placements: candidate.placements },
 				...fixes.map((fix, index) => ({
 					key: `${candidate.key}#bench${index}`,
@@ -152,6 +154,19 @@ export class RunManager {
 					benchNote: fix.note,
 				})),
 			];
+
+			// Socket bonuses are usually beaten by the raw gem, but not always —
+			// so sim the matched layout too and let the result decide, rather than
+			// assuming either way. Only worth it when a bonus is actually in play.
+			if (config.trySocketBonuses) {
+				const placed = placeItems(db, rawGear, candidate.placements, config).gear;
+				const slots = candidate.placements.map(placement => placement.slot);
+				if (matchSocketGems(db, placed, slots, config)) {
+					base.push({ key: `${candidate.key}#matched`, candidate, placements: candidate.placements, matchSockets: true });
+				}
+			}
+
+			return base;
 		});
 
 		this.progress = {
@@ -325,9 +340,13 @@ export class RunManager {
 		target: number,
 	): BuiltVariant {
 		const placed = placeItems(db, rawGear, variant.placements, config);
-		const policy = applyGemPolicy(db, placed.gear, config, hitIdx, target);
+		// Pre-filling the sockets means the gem policy leaves them alone; it only
+		// fills empty ones.
+		const gemmed = variant.matchSockets ? (matchSocketGems(db, placed.gear, variant.placements.map(p => p.slot), config) ?? placed.gear) : placed.gear;
+		const policy = applyGemPolicy(db, gemmed, config, hitIdx, target);
 		const setNotes = describeSetChanges(db, basisGear, policy.gear);
 		if (breaksSetBonus(db, basisGear, policy.gear)) setNotes.unshift('Breaks a set bonus you currently have.');
+		if (variant.matchSockets) setNotes.unshift('Gemmed to match its sockets — the socket bonus beat the default gem here.');
 
 		return {
 			gear: policy.gear,

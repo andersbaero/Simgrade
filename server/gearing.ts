@@ -465,6 +465,53 @@ export function enchantApplies(db: ItemDatabase, effectId: number, item: RawItem
 }
 
 /**
+ * Fills the given slots' sockets with gems that match each socket's colour, so
+ * the item earns its socket bonus. Uses the same per-colour gems configured for
+ * meta requirements — "a gem that counts as blue" is the same question either
+ * way. Returns null when the bonus is unreachable or already earned, so the
+ * caller can skip simming a layout identical to the default one.
+ */
+export function matchSocketGems(db: ItemDatabase, inputGear: Gear, slots: ItemSlot[], config: Config): Gear | null {
+	const gear = cloneGear(inputGear);
+	let changed = false;
+
+	for (const slot of slots) {
+		const spec = gear[slot];
+		const item = spec ? db.item(spec.id) : undefined;
+		if (!spec || !item) continue;
+
+		const sockets = db.sockets(item).filter(color => color !== GemColor.Meta);
+		if (!sockets.length) continue;
+		// Nothing to win if the item has no socket bonus, or already earns it.
+		if (Object.keys(db.socketBonusStats(item)).length === 0) continue;
+		if (hasSocketBonus(db, item, spec.gems ?? [])) continue;
+
+		const gems = spec.gems ? [...spec.gems] : [];
+		let complete = true;
+
+		db.sockets(item).forEach((color, index) => {
+			if (color === GemColor.Meta) return;
+			const key = color === GemColor.Red ? 'red' : color === GemColor.Yellow ? 'yellow' : color === GemColor.Blue ? 'blue' : null;
+			// A prismatic socket is matched by anything, including the base gem.
+			const gemId = key ? config.gems.metaFix[key] : config.gems.base;
+			if (!gemId || !gemMatchesSocket((db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor, color)) {
+				complete = false;
+				return;
+			}
+			while (gems.length <= index) gems.push(0);
+			gems[index] = gemId;
+		});
+
+		// A partial match earns nothing — every socket has to match.
+		if (!complete) continue;
+		gear[slot] = { ...spec, gems };
+		changed = true;
+	}
+
+	return changed ? gear : null;
+}
+
+/**
  * What enchant each swapped-in item ends up with. Without this the row shows
  * gem changes only, which reads as though the item went in unenchanted.
  */

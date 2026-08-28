@@ -132,8 +132,11 @@ Configured in the **Settings** tab. Three decisions, not nine:
 Everything is searchable by name or stat, partial words in any order. Defaults are read from what
 you already have socketed, so a fresh import needs no setup.
 
-Forfeited socket bonuses are still **reported** on every result row — ignoring them is a default,
-not a blind spot. Any swap that would deactivate your meta gem is refused, and if the hit target
+Socket bonuses are not chased by default, but they are not assumed away either: with **Also try
+matching socket colours** on, every socketed candidate is *also* simmed gemmed to match, and
+whichever layout actually wins is the one reported. It is not a foregone conclusion — on a sample
+of seven socketed phase-3 pieces, matching won on three. Costs one extra sim per candidate that
+has a bonus to win. Rows where matching won say so, and forfeited bonuses are still reported. Any swap that would deactivate your meta gem is refused, and if the hit target
 can't be reached without breaking it, the row says how far short it fell and why.
 
 **Hit target** has three modes:

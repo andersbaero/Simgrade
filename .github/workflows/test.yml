@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.6'
+          cache: npm
+
+      - run: npm ci
+
+      # The sim binaries and item database are ~56 MB and pinned by
+      # data/release.json, so they only need fetching when that pin moves.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            bin
+            data/db.json
+          key: wowsims-${{ runner.os }}-${{ hashFiles('data/release.json') }}
+
+      - run: npm run setup
+      - run: npm run typecheck
+      - run: npm test

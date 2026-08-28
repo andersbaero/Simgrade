@@ -5,8 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 import { GemColor, gemMatchesSocket, ItemSlot, Stat } from '../shared/wow.js';
 import { Config, suggestGems } from '../server/config.js';
-import { applyGemPolicy, gearHitRating, metaGemActive } from '../server/gearing.js';
+import { applyGemPolicy, gearHitRating, hasSocketBonus, matchSocketGems, metaGemActive } from '../server/gearing.js';
 import { countGemColors, isMetaGemActive, metaDeficit } from '../shared/metaGems.js';
+import { placeItems } from '../server/candidates.js';
 import { baseConfig, db, profile } from './fixture.js';
 
 const RELENTLESS_EARTHSTORM = 32409; // requires 2 red, 2 yellow, 2 blue
@@ -271,5 +272,57 @@ describe('flat gem model', () => {
 				if (spec.gems?.[idx] === SOVEREIGN_AMETHYST) expect(color).toBe(GemColor.Blue);
 			});
 		});
+	});
+});
+
+describe('socket bonus matching', () => {
+	const BREASTPLATE = 30975; // Onslaught Breastplate: red, blue, blue + a socket bonus
+	const SOVEREIGN_AMETHYST = 32211; // purple — counts as blue
+
+	const config: Config = {
+		...baseConfig,
+		gems: {
+			meta: RELENTLESS_EARTHSTORM,
+			base: BOLD_CRIMSON_SPINEL,
+			hit: RIGID_LIONSEYE,
+			metaFix: { red: BOLD_CRIMSON_SPINEL, yellow: 30564, blue: SOVEREIGN_AMETHYST },
+		},
+	};
+
+	const withItem = (itemId: number, slot: ItemSlot) => placeItems(db, profile.equipment, [{ slot, itemId }], config).gear;
+
+	it('gems an item to match its sockets so the bonus is earned', () => {
+		const placed = applyGemPolicy(db, withItem(BREASTPLATE, ItemSlot.Chest), config, MELEE_HIT, 0).gear;
+		expect(hasSocketBonus(db, db.item(BREASTPLATE)!, placed[ItemSlot.Chest]!.gems!)).toBe(false);
+
+		const matched = matchSocketGems(db, withItem(BREASTPLATE, ItemSlot.Chest), [ItemSlot.Chest], config);
+		expect(matched).not.toBeNull();
+		expect(hasSocketBonus(db, db.item(BREASTPLATE)!, matched![ItemSlot.Chest]!.gems!)).toBe(true);
+	});
+
+	it('puts a blue-counting gem in each blue socket', () => {
+		const matched = matchSocketGems(db, withItem(BREASTPLATE, ItemSlot.Chest), [ItemSlot.Chest], config)!;
+		const sockets = db.sockets(db.item(BREASTPLATE)!);
+		matched[ItemSlot.Chest]!.gems!.forEach((gemId, index) => {
+			expect(gemMatchesSocket((db.gem(gemId)!.color ?? 0) as GemColor, sockets[index]!)).toBe(true);
+		});
+	});
+
+	it('returns null when there is nothing to win, so no extra sim is run', () => {
+		// An item with no socket bonus.
+		const plain = [...db.items.values()].find(
+			item => db.sockets(item).length > 0 && Object.keys(db.socketBonusStats(item)).length === 0 && item.type === 11,
+		);
+		if (plain) {
+			expect(matchSocketGems(db, withItem(plain.id, ItemSlot.Finger1), [ItemSlot.Finger1], config)).toBeNull();
+		}
+		// A slot holding nothing at all.
+		expect(matchSocketGems(db, profile.equipment, [ItemSlot.Neck], config)).toBeNull();
+	});
+
+	it('declines a partial match, since a bonus needs every socket', () => {
+		// No blue gem configured, so the two blue sockets cannot be matched.
+		const noBlue: Config = { ...config, gems: { ...config.gems, metaFix: { ...config.gems.metaFix, blue: 0 } } };
+		expect(matchSocketGems(db, withItem(BREASTPLATE, ItemSlot.Chest), [ItemSlot.Chest], noBlue)).toBeNull();
 	});
 });

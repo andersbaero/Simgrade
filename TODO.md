@@ -74,31 +74,16 @@ The rule that holds for all of these: anything that is not a full
 else alone. That is what keeps the guarantee the tool rests on — between
 baseline and candidate, only the gear differs.
 
-## 3. Try matching socket bonuses on purpose
+## 3. Repository hygiene — two left, both needing you
 
-Gemming now ignores socket colours entirely, which is right almost always — a Bold Crimson Spinel
-(10 strength) beats a Sovereign Shadowsong Amethyst (5 strength, 7 stamina) in a blue socket even
-after losing the bonus. But a chest with a +5 spell damage socket bonus can flip that.
+Done: MIT LICENSE, a `test.yml` running on every push and pull request, and `actions/cache` on the
+56 MB sim runtime keyed by `data/release.json`.
 
-Since the tool sims everything anyway, it could gem an item both ways and let the sim decide,
-the way bench swaps already work. Roughly one extra sim per candidate with a socket bonus worth
-arguing about, so it should be opt-in.
+Still open, because both are yours to decide:
 
-## 4. Repository hygiene
-
-Gaps that only matter now that other people can download this.
-
-- **No LICENSE file.** The repo is public and unlicensed, which technically means nobody has
-  permission to use or fork it — awkward for something you're handing to guildmates. MIT matches
-  what you used on WarlockSim.
-- **CI only runs on `v*` tags.** A push to `main` runs nothing, so both bugs this session were
-  caught *at release time*, after the tag was already cut. A small `test.yml` on push and pull
-  request (`npm run setup` + `npm test`) would catch them before tagging instead.
-- **CI re-downloads 56 MB every run.** `actions/cache` on `bin/` and `data/db.json`, keyed by the
-  hash of `data/release.json`, would cut a couple of minutes off each job.
-- **No screenshots in the README.** For someone deciding whether to download a 73 MB unsigned
-  exe, one picture of the ranked results table is worth more than the prose above it.
+- **No screenshots in the README.** For someone deciding whether to download a 73 MB unsigned exe,
+  one picture of the ranked results table is worth more than all the prose above it. I cannot take
+  one — it needs a real run on a real character.
 - **Commits don't link to your GitHub account.** They are authored as
-  `andersbaero@Anders-sin-MacBook-Pro.local`, git's hostname-derived fallback, because no
-  `user.email` is configured. Fixable going forward with `git config user.email`, or across
-  history with a rebase if it matters.
+  `andersbaero@Anders-sin-MacBook-Pro.local`, git's hostname fallback, because no `user.email` is
+  set. `git config user.email` fixes it going forward; a rebase would fix the history.

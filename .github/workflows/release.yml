@@ -36,9 +36,16 @@ jobs:
 
       - run: npm ci
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            bin
+            data/db.json
+          key: wowsims-${{ runner.os }}-${{ hashFiles('data/release.json') }}
+
       # The test suite runs real sims against wowsimcli and reads the item
-      # database, neither of which is in the repo. This also exercises the
-      # download-and-extract path on each platform before anything is built.
+      # database, neither of which is in the repo. On a cache miss this also
+      # exercises the download-and-extract path on each platform.
       - run: npm run setup
 
       - run: npm test

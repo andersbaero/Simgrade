@@ -39,6 +39,7 @@ export interface AppConfig {
 	iterations: number;
 	refineIterations: number;
 	refineTop: number;
+	trySocketBonuses: boolean;
 	checkForUpdates: boolean;
 	pinSeed: boolean;
 	randomSeed: number;
