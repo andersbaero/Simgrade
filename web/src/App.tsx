@@ -5,6 +5,7 @@ import ItemPicker from './ItemPicker';
 import ConfigPanel from './ConfigPanel';
 import ProfilePanel from './ProfilePanel';
 import ResultsTable from './ResultsTable';
+import UpdateBanner from './UpdateBanner';
 import type { RunProgress, StateResponse } from './types';
 
 type Tab = 'setup' | 'items' | 'settings' | 'results';
@@ -108,6 +109,8 @@ export default function App() {
 					</button>
 				)}
 			</div>
+
+			{state && <UpdateBanner state={state} />}
 
 			{error && <div className="panel notice error">{error}</div>}
 

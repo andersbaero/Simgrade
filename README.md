@@ -46,6 +46,11 @@ cannot be verified, right-click → *Open*, or clear the flag with
 
 Both servers are local only. Stop it by closing the console window, or `Ctrl-C`.
 
+When a newer release exists, a banner appears at the top of the app. **Download it** fetches the
+right file for your platform next to the one you are running and opens that folder — close
+Simgrade, swap the file, start it again. It never replaces the running program, so a failed
+download cannot break your install. Turn the check off in Settings if you sim offline.
+
 ## Running from source
 
 ```bash

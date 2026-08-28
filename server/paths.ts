@@ -29,7 +29,7 @@ const INSTALL_DIR = IS_PACKAGED
 	? path.dirname(process.execPath)
 	: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function isWritable(dir: string): boolean {
+export function isWritableDir(dir: string): boolean {
 	try {
 		fs.mkdirSync(dir, { recursive: true });
 		const probe = path.join(dir, `.write-probe-${process.pid}`);
@@ -54,7 +54,7 @@ function userDataDir(): string {
  * the OS app-data directory when that isn't writable (Program Files, a DMG).
  */
 function resolveStateDir(): { dir: string; fallback: boolean } {
-	if (isWritable(INSTALL_DIR)) return { dir: INSTALL_DIR, fallback: false };
+	if (isWritableDir(INSTALL_DIR)) return { dir: INSTALL_DIR, fallback: false };
 	return { dir: userDataDir(), fallback: true };
 }
 

@@ -45,10 +45,32 @@ export async function latestVersion(): Promise<string> {
 	return (await resp.json()).tag_name as string;
 }
 
-async function download(url: string, dest: string): Promise<void> {
+/**
+ * Downloads to a file, reporting bytes as they arrive. A 73 MB update with no
+ * feedback looks like a hang, so the body is streamed rather than buffered.
+ */
+export async function download(url: string, dest: string, onProgress?: (received: number, total: number) => void): Promise<void> {
 	const resp = await fetch(url, { redirect: 'follow' });
 	if (!resp.ok) throw new BootstrapError(`${resp.status} ${resp.statusText} for ${url}`);
-	await fs.promises.writeFile(dest, Buffer.from(await resp.arrayBuffer()));
+
+	if (!onProgress || !resp.body) {
+		await fs.promises.writeFile(dest, Buffer.from(await resp.arrayBuffer()));
+		return;
+	}
+
+	const total = Number(resp.headers.get('content-length') ?? 0);
+	const chunks: Buffer[] = [];
+	let received = 0;
+	const reader = resp.body.getReader();
+
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		chunks.push(Buffer.from(value));
+		received += value.length;
+		onProgress(received, total);
+	}
+	await fs.promises.writeFile(dest, Buffer.concat(chunks));
 }
 
 /**
@@ -56,7 +78,7 @@ async function download(url: string, dest: string): Promise<void> {
  * Windows 10 1803+ has bsdtar as `tar`, which reads zips; PowerShell's
  * Expand-Archive is the fallback for anything older.
  */
-function extractZip(zip: string, dir: string): void {
+export function extractZip(zip: string, dir: string): void {
 	if (os.platform() === 'win32') {
 		try {
 			execFileSync('tar', ['-xf', zip, '-C', dir], { stdio: 'ignore' });

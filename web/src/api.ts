@@ -1,4 +1,4 @@
-import type { CandidateItem, GemOption, RunProgress, StateResponse } from './types';
+import type { CandidateItem, GemOption, RunProgress, StateResponse, UpdateProgress } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
 	const resp = await fetch(url, {
@@ -22,4 +22,6 @@ export const api = {
 	startRun: () => request<{ ok: boolean }>('/api/run', { method: 'POST', body: '{}' }),
 	abortRun: () => request<{ ok: boolean }>('/api/run/abort', { method: 'POST', body: '{}' }),
 	progress: () => request<RunProgress>('/api/progress'),
+	downloadUpdate: () => request<{ ok: boolean }>('/api/update/download', { method: 'POST', body: '{}' }),
+	updateProgress: () => request<UpdateProgress>('/api/update/progress'),
 };

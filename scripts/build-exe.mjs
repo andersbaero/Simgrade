@@ -59,6 +59,10 @@ function collectWebAssets() {
 	return assets;
 }
 
+function simgradeVersion() {
+	return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+}
+
 function pinnedVersion() {
 	const pin = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'release.json'), 'utf8'));
 	if (!pin.version) throw new Error('data/release.json has no "version" — cannot pin the wowsims release.');
@@ -75,7 +79,8 @@ run(process.execPath, [VITE, 'build'], 'vite build');
 
 const assets = collectWebAssets();
 const version = pinnedVersion();
-console.log(`     ${Object.keys(assets).length} UI assets, wowsims pinned to ${version}`);
+const appVersion = simgradeVersion();
+console.log(`     ${Object.keys(assets).length} UI assets, Simgrade ${appVersion}, wowsims pinned to ${version}`);
 
 console.log('2/5  Bundling the server…');
 const bundle = path.join(BUILD, 'server.cjs');
@@ -93,6 +98,7 @@ try {
 			__PACKAGED__: 'true',
 			__WEB_ASSET_KEYS__: JSON.stringify(Object.keys(assets)),
 			__PINNED_VERSION__: JSON.stringify(version),
+			__APP_VERSION__: JSON.stringify(appVersion),
 			// The source-run branch in paths.ts is dead here, but CommonJS has no
 			// import.meta; defining it keeps esbuild quiet about the reference.
 			'import.meta.url': '""',

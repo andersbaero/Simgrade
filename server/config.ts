@@ -36,6 +36,8 @@ export interface Config {
 	iterations: number;
 	refineIterations: number;
 	refineTop: number;
+	/** Look for a newer Simgrade release at startup. */
+	checkForUpdates: boolean;
 	/** Reuse this seed on every run instead of drawing a fresh one. */
 	pinSeed: boolean;
 	randomSeed: number;
@@ -65,6 +67,7 @@ export const DEFAULT_CONFIG: Config = {
 	iterations: 30000,
 	refineIterations: 100000,
 	refineTop: 15,
+	checkForUpdates: true,
 	pinSeed: false,
 	randomSeed: 19700101,
 	metric: 'auto',

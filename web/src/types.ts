@@ -2,6 +2,14 @@
 // and the server can never drift apart.
 export type { CandidateResult, CatalogItem as CandidateItem, RunFailure, RunProgress } from '../../shared/wow';
 
+export interface UpdateProgress {
+	state: 'idle' | 'running' | 'done' | 'error';
+	received: number;
+	total: number;
+	file?: string;
+	message?: string;
+}
+
 export interface GemOption {
 	id: number;
 	name: string;
@@ -31,6 +39,7 @@ export interface AppConfig {
 	iterations: number;
 	refineIterations: number;
 	refineTop: number;
+	checkForUpdates: boolean;
 	pinSeed: boolean;
 	randomSeed: number;
 	metric: string;
@@ -47,5 +56,7 @@ export interface StateResponse {
 	selection: number[];
 	bench: number[];
 	dropped: string[];
+	version: string;
+	update: { latest: string; url: string; downloadable: boolean } | null;
 	running: boolean;
 }

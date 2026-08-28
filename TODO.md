@@ -22,6 +22,13 @@ Still open:
 - **Intel Macs** would need a `macos-13` matrix entry. Skip until someone asks.
 - **Linux** is unbuilt. `assetSuffix()` already handles it; just add a matrix entry if wanted.
 - **Code signing** would remove the SmartScreen warning (~$100–400/yr). Probably never worth it.
+- **Self-replacing the binary.** The app downloads an update beside itself and leaves the swap to
+  you. Doing the swap automatically means renaming the running exe on Windows, a rollback path
+  when it half-fails, and deleting the old file on next launch — worth it only if swapping a file
+  by hand turns out to actually trip people up.
+- **Independent sim-engine updates.** The wowsims version is pinned to each Simgrade build, so
+  everyone on a version sims identically and results stay comparable. Letting people pull a newer
+  engine on their own would trade that away.
 - **A console window opens** on double-click. It is where first-run progress and errors appear,
   so this is deliberate — but if it ever grates, a Windows GUI-subsystem shim is the fix.
 

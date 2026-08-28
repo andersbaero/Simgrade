@@ -201,6 +201,14 @@ export default function ConfigPanel({ config, profile, onSaved }: Props) {
 						<input type="checkbox" checked={draft.pinSeed} onChange={event => patch({ pinSeed: event.target.checked })} />
 						Pin the seed
 					</label>
+					<label className="row small" style={{ gap: 6, paddingBottom: 8 }}>
+						<input
+							type="checkbox"
+							checked={draft.checkForUpdates}
+							onChange={event => patch({ checkForUpdates: event.target.checked })}
+						/>
+						Check for updates at startup
+					</label>
 					<label className="field">
 						Compare against
 						<select value={draft.deltaBasis} onChange={event => patch({ deltaBasis: event.target.value as 'tuned' | 'raw' })}>

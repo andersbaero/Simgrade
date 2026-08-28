@@ -24,12 +24,21 @@ import { ParsedProfile, ProfileError, parseProfile } from './profile.js';
 import { RunManager, resolveTargetHitRating } from './run.js';
 import { gearHitRating } from './gearing.js';
 import { setsInGear } from './sets.js';
+import { appVersion, checkForUpdate, downloadUpdate, UpdateInfo } from './updates.js';
 import { IS_PACKAGED } from './paths.js';
 
 const PORT = Number(process.env.PORT ?? 5174);
 const WOWSIMS_PORT = Number(process.env.WOWSIMS_PORT ?? 3333);
 
 const runs = new RunManager();
+
+/** Checked once at startup and kept for the session; downloads report progress here. */
+let update: UpdateInfo | null = null;
+let downloadState: { state: 'idle' | 'running' | 'done' | 'error'; received: number; total: number; file?: string; message?: string } = {
+	state: 'idle',
+	received: 0,
+	total: 0,
+};
 
 function readJson<T>(path: string, fallback: T): T {
 	try {
@@ -108,6 +117,8 @@ app.get('/api/state', async () => {
 		release,
 		selection: selection.ids,
 		bench: bench.ids,
+		version: appVersion(),
+		update: update && { latest: update.latest, url: update.url, downloadable: !!update.asset },
 		// Surfaced so a vanishing item is explained rather than just gone.
 		dropped: dropped.map(item => item.name),
 		running: runs.isRunning(),
@@ -195,6 +206,27 @@ app.get('/api/gems', async () => {
 			.sort((a, b) => a.color - b.color || b.quality - a.quality || b.phase - a.phase || a.name.localeCompare(b.name)),
 	};
 });
+
+app.post('/api/update/download', async (_request, reply) => {
+	if (!update?.asset) return reply.code(400).send({ error: 'Nothing to download for this platform — use the release page.' });
+	if (downloadState.state === 'running') return { ok: true };
+
+	downloadState = { state: 'running', received: 0, total: update.asset.size };
+	void downloadUpdate(update, (received, total) => {
+		downloadState = { ...downloadState, received, total: total || downloadState.total };
+	})
+		.then(result => {
+			downloadState = { ...downloadState, state: 'done', file: result.file };
+			openPath(result.directory);
+		})
+		.catch((err: unknown) => {
+			downloadState = { ...downloadState, state: 'error', message: err instanceof Error ? err.message : String(err) };
+		});
+
+	return { ok: true };
+});
+
+app.get('/api/update/progress', async () => downloadState);
 
 app.post('/api/run', async (_request, reply) => {
 	const profile = currentProfile();
@@ -306,13 +338,13 @@ async function startWowsimsUI(): Promise<void> {
 	});
 }
 
-/** Opens the default browser at the app, for the double-click case. */
-function openBrowser(url: string): void {
+/** Hands a URL or folder to the OS — the browser for the app, Finder/Explorer for a download. */
+function openPath(target: string): void {
 	const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
 	try {
-		spawn(opener, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
+		spawn(opener, [target], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
 	} catch {
-		/* the URL is printed either way */
+		/* the path is printed either way */
 	}
 }
 
@@ -333,13 +365,21 @@ async function main(): Promise<void> {
 		console.log("  UI not built — run 'npm run build:web' (or 'npm start', which builds it for you).");
 	}
 
+	// Never blocks startup, and any failure leaves `update` null.
+	if (loadConfig().checkForUpdates) {
+		void checkForUpdate().then(found => {
+			update = found;
+			if (found) console.log(`\n  Simgrade ${found.latest} is available (you have ${found.current}) — ${found.url}`);
+		});
+	}
+
 	await startWowsimsUI();
 	await app.listen({ port: PORT, host: '127.0.0.1' });
 
 	console.log(`\n  Simgrade         http://localhost:${PORT}`);
 	console.log(`  wowsims UI       http://localhost:${WOWSIMS_PORT}/tbc/\n`);
 
-	if (IS_PACKAGED || process.env.SIMGRADE_OPEN_BROWSER === '1') openBrowser(`http://localhost:${PORT}`);
+	if (IS_PACKAGED || process.env.SIMGRADE_OPEN_BROWSER === '1') openPath(`http://localhost:${PORT}`);
 }
 
 main().catch((err: unknown) => {
