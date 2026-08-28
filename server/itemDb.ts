@@ -191,15 +191,17 @@ export class ItemDatabase {
 	}
 
 	/**
-	 * Whether this character could actually wear the item. Armour lighter than
-	 * the class's own type is legal in game but never an upgrade at 70, so it
-	 * counts as unusable here.
+	 * Whether this character could actually wear the item. Armour proficiency in
+	 * TBC is cumulative — a class equips its own type and everything lighter —
+	 * and that matters: casters in mail routinely take cloth and leather pieces
+	 * for the stats. Only heavier armour is out of reach.
 	 */
 	usableBy(wowClass: number, item: RawItem): boolean {
 		if (item.classAllowlist?.length && !item.classAllowlist.includes(wowClass)) return false;
 
 		const armorType = item.armorType ?? ArmorType.Unknown;
-		if (armorType !== ArmorType.Unknown && armorType !== (CLASS_ARMOR_TYPE[wowClass] ?? ArmorType.Unknown)) return false;
+		const heaviest = CLASS_ARMOR_TYPE[wowClass] ?? ArmorType.Unknown;
+		if (armorType !== ArmorType.Unknown && heaviest !== ArmorType.Unknown && armorType > heaviest) return false;
 
 		if (!eligibleItemSlots({ type: item.type ?? 0, handType: item.handType }).length) return false;
 

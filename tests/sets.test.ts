@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ItemSlot, WowClass } from '../shared/wow.js';
 import { buildCandidates, placeItems } from '../server/candidates.js';
 import type { Gear } from '../server/gearing.js';
+import { describeEnchants, enchantApplies } from '../server/gearing.js';
 import { breaksSetBonus, describeSetChanges, setsInGear } from '../server/sets.js';
 import { baseConfig as config, db, profile } from './fixture.js';
 
@@ -152,5 +153,64 @@ describe('stale selections from another character', () => {
 		const ring = 32526; // Band of Devastation, no class restriction
 		expect(db.partitionUsable([ring], WowClass.Warlock).kept).toEqual([ring]);
 		expect(db.partitionUsable([ring], WowClass.Warrior).kept).toEqual([ring]);
+	});
+});
+
+describe('armour proficiency is cumulative', () => {
+	const INSIDIOUS_BANDS = 32324; // leather wrists, physical DPS stats
+
+	it('lets a class wear its own armour type and everything lighter', () => {
+		const bands = db.item(INSIDIOUS_BANDS)!;
+		expect(bands.armorType).toBe(2); // leather
+		expect(db.usableBy(WowClass.Rogue, bands)).toBe(true); // own type
+		expect(db.usableBy(WowClass.Shaman, bands)).toBe(true); // mail wearer, leather is lighter
+		expect(db.usableBy(WowClass.Warrior, bands)).toBe(true); // plate wearer
+		expect(db.usableBy(WowClass.Warlock, bands)).toBe(false); // cloth cannot wear leather
+	});
+
+	it('offers cloth caster pieces to a mail wearer', () => {
+		// Shamans routinely take cloth and leather caster gear for the stats.
+		const cloth = db.catalog({ wowClass: WowClass.Shaman, equippedIds: new Set() }).filter(item => item.armorType === 1);
+		expect(cloth.length).toBeGreaterThan(0);
+	});
+
+	it('still refuses armour heavier than the class can wear', () => {
+		const plate = db.catalog({ wowClass: WowClass.Rogue, equippedIds: new Set() }).filter(item => item.armorType > 2);
+		expect(plate).toHaveLength(0);
+	});
+});
+
+describe('enchants on swapped-in items', () => {
+	it('carries the replaced slot enchant onto every candidate that accepts it', () => {
+		const enchanted = profile.equipment
+			.map((spec, slot) => ({ spec, slot: slot as ItemSlot }))
+			.filter(entry => entry.spec?.enchant);
+		expect(enchanted.length).toBeGreaterThan(5);
+
+		let checked = 0;
+		for (const { spec, slot } of enchanted) {
+			const candidate = db
+				.catalog({ wowClass: profile.wowClass, equippedIds: new Set() })
+				.find(item => item.slots.includes(slot) && item.phase === 3 && item.quality === 4);
+			if (!candidate) continue;
+
+			const { gear } = placeItems(db, profile.equipment, [{ slot, itemId: candidate.id }], config);
+			if (enchantApplies(db, spec!.enchant!, db.item(candidate.id)!)) {
+				expect(gear[slot]!.enchant).toBe(spec!.enchant);
+				checked++;
+			} else {
+				// e.g. a weapon enchant onto a shield — genuinely cannot transfer,
+				// and the row has to say so rather than look silently unenchanted.
+				expect(gear[slot]!.enchant).toBeUndefined();
+				expect(describeEnchants(db, [{ slot, itemId: candidate.id }], gear)[0]).toMatch(/left unenchanted/);
+			}
+		}
+		expect(checked).toBeGreaterThan(5);
+	});
+
+	it('reports the enchant it applied, so a row never looks unenchanted', () => {
+		const { gear } = placeItems(db, profile.equipment, [{ slot: ItemSlot.Head, itemId: HELM }], config);
+		const notes = describeEnchants(db, [{ slot: ItemSlot.Head, itemId: HELM }], gear);
+		expect(notes[0]).toMatch(/Head: Onslaught Battle-Helm (enchanted with|left unenchanted)/);
 	});
 });

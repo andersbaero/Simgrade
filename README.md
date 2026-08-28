@@ -95,9 +95,13 @@ cached, so unaffected items are not re-run.
 
 - Sims run through the official **`wowsimcli`** binary from the same wowsims release you already
   use. It has the item database compiled in, which is why the CLI export doesn't need one.
-- **One random seed for the whole run.** Correlated random streams shrink the noise on a
-  *difference* far below the noise on either sim alone, which is what makes a 15 DPS delta
-  meaningful at all.
+- **One random seed for the whole run, drawn fresh each time.** Sharing a seed within a run means
+  correlated random streams, which shrink the noise on a *difference* far below the noise on
+  either sim alone — that is what makes a 15 DPS delta meaningful. Drawing a new one per run means
+  clicking **Run** gives an independent sample rather than replaying the last one; pin it in
+  settings if you want an exactly reproducible number.
+- **Armour proficiency is cumulative.** A class is offered its own armour type and everything
+  lighter, so a mail-wearing caster sees cloth and leather pieces. Heavier armour is filtered out.
 - **Two passes.** Everything is ranked at 30,000 iterations, then the top 15 plus every tier
   bundle are re-simmed at 100,000. Both counts are configurable.
 - **Confidence intervals.** Each row shows ±95% CI. Rows where the CI straddles zero are labelled
@@ -192,5 +196,6 @@ paste your own profile.
 - **No contested/competition scoring** — deliberately out of scope for this build.
 - **No greedy multi-week path.** Each run ranks against your *current* gear. Re-export and re-run
   after a drop to get the next step.
-- Enchants are carried over from the item being replaced, or taken from a per-slot default. They
-  are not optimised.
+- Enchants are carried over from the item being replaced, or taken from a per-slot default, and
+  every result row names the enchant it applied. They are not optimised. When one genuinely cannot
+  transfer — a weapon enchant onto a shield, say — the row says the item went in unenchanted.

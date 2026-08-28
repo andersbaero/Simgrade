@@ -458,6 +458,19 @@ export function enchantApplies(db: ItemDatabase, effectId: number, item: RawItem
 	return true;
 }
 
+/**
+ * What enchant each swapped-in item ends up with. Without this the row shows
+ * gem changes only, which reads as though the item went in unenchanted.
+ */
+export function describeEnchants(db: ItemDatabase, placements: { slot: ItemSlot; itemId: number }[], gear: Gear): string[] {
+	return placements.map(({ slot }) => {
+		const spec = gear[slot];
+		const name = spec ? (db.item(spec.id)?.name ?? `item ${spec.id}`) : '';
+		if (!spec?.enchant) return `${slotLabel(slot)}: ${name} left unenchanted — no enchant configured that fits it.`;
+		return `${slotLabel(slot)}: ${name} enchanted with ${db.enchant(spec.enchant)?.name ?? `enchant ${spec.enchant}`}.`;
+	});
+}
+
 export function describeGemChanges(changes: GemChange[]): string[] {
 	return changes.map(change => change.description);
 }

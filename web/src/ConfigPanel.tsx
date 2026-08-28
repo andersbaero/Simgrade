@@ -190,7 +190,16 @@ export default function ConfigPanel({ config, profile, onSaved }: Props) {
 					</label>
 					<label className="field">
 						Random seed
-						<input type="number" value={draft.randomSeed} onChange={event => patch({ randomSeed: Number(event.target.value) })} />
+						<input
+							type="number"
+							value={draft.randomSeed}
+							disabled={!draft.pinSeed}
+							onChange={event => patch({ randomSeed: Number(event.target.value) })}
+						/>
+					</label>
+					<label className="row small" style={{ gap: 6, paddingBottom: 8 }}>
+						<input type="checkbox" checked={draft.pinSeed} onChange={event => patch({ pinSeed: event.target.checked })} />
+						Pin the seed
 					</label>
 					<label className="field">
 						Compare against

@@ -31,6 +31,7 @@ export interface AppConfig {
 	iterations: number;
 	refineIterations: number;
 	refineTop: number;
+	pinSeed: boolean;
 	randomSeed: number;
 	metric: string;
 	hitStat: string;

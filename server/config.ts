@@ -36,6 +36,8 @@ export interface Config {
 	iterations: number;
 	refineIterations: number;
 	refineTop: number;
+	/** Reuse this seed on every run instead of drawing a fresh one. */
+	pinSeed: boolean;
 	randomSeed: number;
 	metric: 'auto' | 'dps' | 'hps' | 'tps';
 	hitStat: 'auto' | 'spell' | 'melee';
@@ -63,6 +65,7 @@ export const DEFAULT_CONFIG: Config = {
 	iterations: 30000,
 	refineIterations: 100000,
 	refineTop: 15,
+	pinSeed: false,
 	randomSeed: 19700101,
 	metric: 'auto',
 	hitStat: 'auto',

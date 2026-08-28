@@ -15,7 +15,7 @@ import { CandidateResult, RunFailure, RunProgress } from '../shared/wow.js';
 import { hitFixVariants } from './bench.js';
 import { buildCandidates, Candidate, Placement, placeItems } from './candidates.js';
 import { Config, hitStatIndex, ratingPerPercent, resolveHitStat, resolveMetric } from './config.js';
-import { applyGemPolicy, describeGemChanges, Gear, gearHitRating } from './gearing.js';
+import { applyGemPolicy, describeEnchants, describeGemChanges, Gear, gearHitRating } from './gearing.js';
 import { ItemDatabase } from './itemDb.js';
 import type { ParsedProfile } from './profile.js';
 import { withEquipment } from './profile.js';
@@ -128,7 +128,11 @@ export class RunManager {
 	private async execute({ db, profile, config, selectedIds, benchIds, onFinished }: RunInputs): Promise<void> {
 		const metric = resolveMetric(config, profile);
 		const hitIdx = hitStatIndex(resolveHitStat(config, profile));
-		const seed = config.randomSeed;
+		// One seed for the whole run keeps baseline and candidates on the same
+		// random stream, which is what makes small deltas measurable. Drawing a
+		// fresh one per run means clicking Run actually re-runs — and gives an
+		// independent sample rather than replaying the cache.
+		const seed = config.pinSeed ? config.randomSeed : Date.now() % 2_000_000_000;
 		const target = resolveTargetHitRating(db, profile, config);
 		const rawGear = profile.equipment;
 
@@ -329,7 +333,7 @@ export class RunManager {
 			gear: policy.gear,
 			hitRating: policy.hitRating,
 			setNotes,
-			gemNotes: [...describeGemChanges(policy.changes), ...policy.notes],
+			gemNotes: [...describeEnchants(db, variant.placements, policy.gear), ...describeGemChanges(policy.changes), ...policy.notes],
 			warnings: [...placed.warnings, ...policy.warnings],
 		};
 	}
