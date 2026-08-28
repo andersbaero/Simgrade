@@ -67,7 +67,17 @@ The rule that holds for all of these: anything that is not a full
 else alone. That is what keeps the guarantee the tool rests on — between
 baseline and candidate, only the gear differs.
 
-## 3. Repository hygiene
+## 3. Try matching socket bonuses on purpose
+
+Gemming now ignores socket colours entirely, which is right almost always — a Bold Crimson Spinel
+(10 strength) beats a Sovereign Shadowsong Amethyst (5 strength, 7 stamina) in a blue socket even
+after losing the bonus. But a chest with a +5 spell damage socket bonus can flip that.
+
+Since the tool sims everything anyway, it could gem an item both ways and let the sim decide,
+the way bench swaps already work. Roughly one extra sim per candidate with a socket bonus worth
+arguing about, so it should be opt-in.
+
+## 4. Repository hygiene
 
 Gaps that only matter now that other people can download this.
 

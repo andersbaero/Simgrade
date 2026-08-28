@@ -3,10 +3,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GemColor, ItemSlot, Stat } from '../shared/wow.js';
+import { GemColor, gemMatchesSocket, ItemSlot, Stat } from '../shared/wow.js';
 import { Config, suggestGems } from '../server/config.js';
 import { applyGemPolicy, gearHitRating, metaGemActive } from '../server/gearing.js';
-import { countGemColors, isMetaGemActive, metaDeficit } from '../server/metaGems.js';
+import { countGemColors, isMetaGemActive, metaDeficit } from '../shared/metaGems.js';
 import { baseConfig, db, profile } from './fixture.js';
 
 const RELENTLESS_EARTHSTORM = 32409; // requires 2 red, 2 yellow, 2 blue
@@ -65,7 +65,7 @@ describe('hit solver', () => {
 		// hit gem for blue sockets tempts the solver into breaking the meta.
 		const config: Config = {
 			...baseConfig,
-			gems: { ...baseConfig.gems, hit: { ...baseConfig.gems.hit, blue: RIGID_LIONSEYE, red: RIGID_LIONSEYE } },
+			gems: { ...baseConfig.gems, hit: RIGID_LIONSEYE },
 		};
 		expect(metaGemActive(db, profile.equipment).active).toBe(true);
 
@@ -87,17 +87,23 @@ describe('hit solver', () => {
 });
 
 describe('gem suggestions', () => {
-	it('reads the normal gems from what the character already wears', () => {
+	it('reads the default gem from whatever the character wears most', () => {
 		const suggested = suggestGems(db, profile, 'melee');
 		expect(suggested.meta).toBe(RELENTLESS_EARTHSTORM);
-		expect(db.gem(suggested.normal.red)?.color).toBe(GemColor.Red);
+		expect(suggested.base).toBe(BOLD_CRIMSON_SPINEL);
 	});
 
-	it('picks a hit gem that matches the socket colour', () => {
+	it('picks the strongest hit gem regardless of colour', () => {
 		const suggested = suggestGems(db, profile, 'melee');
-		expect(suggested.hit.yellow).toBe(RIGID_LIONSEYE);
-		// No pure melee-hit blue gem exists in TBC, so blue must stay unset.
-		expect(suggested.hit.blue).toBe(0);
+		expect(suggested.hit).toBe(RIGID_LIONSEYE); // +10 melee hit, the most available
+	});
+
+	it('picks a meta-requirement gem that genuinely counts for each colour', () => {
+		const suggested = suggestGems(db, profile, 'melee');
+		for (const key of ['red', 'yellow', 'blue'] as const) {
+			const color = db.gem(suggested.metaFix[key])?.color as GemColor;
+			expect(gemMatchesSocket(color, { red: GemColor.Red, yellow: GemColor.Yellow, blue: GemColor.Blue }[key])).toBe(true);
+		}
 	});
 });
 
@@ -105,7 +111,7 @@ describe('off-colour gems', () => {
 	it('places a red gem in a yellow socket when that is what is configured', () => {
 		const config: Config = {
 			...baseConfig,
-			gems: { ...baseConfig.gems, normal: { ...baseConfig.gems.normal, yellow: BOLD_CRIMSON_SPINEL } },
+			gems: { ...baseConfig.gems, base: BOLD_CRIMSON_SPINEL },
 		};
 		// Onslaught Battle-Helm: one meta socket and one yellow socket.
 		const gear = profile.equipment.map(item => (item ? { ...item } : null));
@@ -117,16 +123,23 @@ describe('off-colour gems', () => {
 	});
 
 	it('says which items lost their socket bonus to an off-colour gem', () => {
-		// Onslaught Shoulderblades has a yellow socket and a socket bonus, so a
-		// red gem there is exactly the trade-off that should be reported.
-		const config: Config = {
-			...baseConfig,
-			gems: { ...baseConfig.gems, normal: { ...baseConfig.gems.normal, yellow: BOLD_CRIMSON_SPINEL } },
-		};
-		const gear = profile.equipment.map(item => (item ? { ...item, gems: [0, 0] } : null));
+		// One red gem in every socket, so any item with a non-red socket and a
+		// bonus forfeits it — that is the trade-off the flat model makes.
+		const config: Config = { ...baseConfig, gems: { ...baseConfig.gems, base: BOLD_CRIMSON_SPINEL } };
+		const gear = profile.equipment.map(item => {
+			if (!item) return null;
+			const sockets = db.sockets(db.item(item.id)!);
+			return { ...item, gems: sockets.map(() => 0) };
+		});
 
 		const result = applyGemPolicy(db, gear, config, MELEE_HIT, 0);
-		expect(result.notes.join(' ')).toMatch(/Socket bonus not earned on .*Shoulder/);
+		const note = result.notes.find(entry => entry.startsWith('Socket bonus not earned on'));
+		expect(note).toBeDefined();
+
+		// Every slot it names must really have an unmatched socket.
+		const named = note!.replace('Socket bonus not earned on ', '').replace(' (off-colour gems).', '').split(', ');
+		expect(named.length).toBeGreaterThan(0);
+		expect(named).not.toContain('Head'); // meta + red sockets: nothing to forfeit
 	});
 
 	it('refuses to put a non-meta gem in a meta socket', () => {
@@ -143,7 +156,7 @@ describe('off-colour gems', () => {
 		// Rigid Lionseye is yellow; offering it for red sockets must still work.
 		const config: Config = {
 			...baseConfig,
-			gems: { ...baseConfig.gems, hit: { ...baseConfig.gems.hit, red: RIGID_LIONSEYE } },
+			gems: { ...baseConfig.gems, hit: RIGID_LIONSEYE },
 		};
 		const start = gearHitRating(db, profile.equipment, MELEE_HIT);
 		const result = applyGemPolicy(db, profile.equipment, config, MELEE_HIT, start + 40);
@@ -154,95 +167,109 @@ describe('off-colour gems', () => {
 });
 
 describe('gem defaults from actual socket usage', () => {
-	it('reads the default for a socket colour from what sits in those sockets', () => {
+	it('takes the default gem from whatever is worn most, ignoring socket colour', () => {
 		const gear = profile.equipment.map(item => (item ? { ...item, gems: item.gems ? [...item.gems] : undefined } : null));
-		// Force a red gem into every yellow socket, then re-derive the defaults.
+		// Put one distinctive gem in every non-meta socket.
 		for (const spec of gear) {
 			const item = spec ? db.item(spec.id) : undefined;
 			if (!spec || !item) continue;
 			db.sockets(item).forEach((color, idx) => {
-				if (color === GemColor.Yellow && spec.gems) spec.gems[idx] = BOLD_CRIMSON_SPINEL;
+				if (color !== GemColor.Meta && spec.gems) spec.gems[idx] = RIGID_LIONSEYE;
 			});
 		}
 
 		const suggested = suggestGems(db, { ...profile, equipment: gear }, 'melee');
-		expect(suggested.normal.yellow).toBe(BOLD_CRIMSON_SPINEL);
+		expect(suggested.base).toBe(RIGID_LIONSEYE);
+		// The meta gem is still read from the meta socket, not the rest.
+		expect(suggested.meta).toBe(RELENTLESS_EARTHSTORM);
 	});
 });
 
-describe('forcing an unmet meta gem', () => {
-	const CHAOTIC_SKYFIRE = 34220; // requires at least 2 blue gems
-	const SOVEREIGN_AMETHYST = 32211; // purple — counts as both red and blue
-	const BRILLIANT_LIONSEYE = 32204; // yellow
+describe('flat gem model', () => {
+	const CHAOTIC_SKYFIRE = 34220; // requires 2 blue
+	const SOVEREIGN_AMETHYST = 32211; // purple — counts red and blue
 
-	/**
-	 * Gear with no blue socket anywhere and every other socket emptied — the case
-	 * where a blue-hungry meta gem cannot be satisfied by normal socketing.
-	 */
-	const gearWithoutBlueSockets = () =>
+	const SHINING_FIRE_OPAL = 30564; // orange — counts as yellow (and red)
+
+	const flat = (base: number, hit: number): Config => ({
+		...baseConfig,
+		gems: { meta: RELENTLESS_EARTHSTORM, base, hit, metaFix: { red: base, yellow: SHINING_FIRE_OPAL, blue: SOVEREIGN_AMETHYST } },
+	});
+
+	const emptied = () =>
 		profile.equipment.map(item => {
 			if (!item) return null;
-			const dbItem = db.item(item.id);
-			const sockets = dbItem ? db.sockets(dbItem) : [];
-			if (sockets.includes(GemColor.Blue)) return null; // drop the item, not just its gems
-			return { ...item, gems: sockets.map(color => (color === GemColor.Meta ? CHAOTIC_SKYFIRE : 0)) };
+			const sockets = db.sockets(db.item(item.id)!);
+			return { ...item, gems: sockets.map(color => (color === GemColor.Meta ? RELENTLESS_EARTHSTORM : 0)) };
 		});
 
-	const configWith = (blueGem: number): Config => ({
-		...baseConfig,
-		gems: {
-			meta: CHAOTIC_SKYFIRE,
-			// Red gems in every socket colour, the way someone actually gems.
-			normal: { red: BOLD_CRIMSON_SPINEL, yellow: BOLD_CRIMSON_SPINEL, blue: blueGem, prismatic: BOLD_CRIMSON_SPINEL },
-			hit: { ...baseConfig.gems.hit },
-		},
+	it('puts the same gem in every socket colour', () => {
+		// No meta gem, so nothing forces an off-base colour in.
+		const config: Config = { ...flat(BOLD_CRIMSON_SPINEL, RIGID_LIONSEYE), gems: { meta: 0, base: BOLD_CRIMSON_SPINEL, hit: RIGID_LIONSEYE, metaFix: { red: 0, yellow: 0, blue: 0 } } };
+		const result = applyGemPolicy(db, emptied(), config, MELEE_HIT, 0);
+
+		const placed = result.gear.flatMap(spec => spec?.gems ?? []).filter(id => id && id !== RELENTLESS_EARTHSTORM);
+		expect(placed.length).toBeGreaterThan(4);
+		expect(new Set(placed)).toEqual(new Set([BOLD_CRIMSON_SPINEL]));
 	});
 
-	it('reports how many gems of each colour a meta gem still needs', () => {
-		expect(metaDeficit(CHAOTIC_SKYFIRE, [GemColor.Red, GemColor.Red])).toEqual({ red: 0, yellow: 0, blue: 2 });
-		expect(metaDeficit(CHAOTIC_SKYFIRE, [GemColor.Blue, GemColor.Purple])).toEqual({ red: 0, yellow: 0, blue: 0 });
+	it('converts only as many sockets as the hit target needs, then stops', () => {
+		// Chaotic Skyfire only wants blue, so red and yellow stay free to trade.
+		// Relentless (2 of each colour) would correctly block every swap instead.
+		const config: Config = {
+			...baseConfig,
+			gems: { meta: CHAOTIC_SKYFIRE, base: BOLD_CRIMSON_SPINEL, hit: RIGID_LIONSEYE, metaFix: { red: BOLD_CRIMSON_SPINEL, yellow: BOLD_CRIMSON_SPINEL, blue: SOVEREIGN_AMETHYST } },
+		};
+		const gear = emptied().map(spec => {
+			if (!spec) return null;
+			const sockets = db.sockets(db.item(spec.id)!);
+			return { ...spec, gems: sockets.map(color => (color === GemColor.Meta ? CHAOTIC_SKYFIRE : 0)) };
+		});
+
+		// The gear already carries hit from items and enchants, so the target has
+		// to be measured from there rather than from zero.
+		const perGem = db.gemStats(RIGID_LIONSEYE)[MELEE_HIT]!; // +10
+		const fromGear = gearHitRating(db, gear, MELEE_HIT);
+		const target = fromGear + perGem * 3;
+		const result = applyGemPolicy(db, gear, config, MELEE_HIT, target);
+
+		const hitGems = result.gear.flatMap(spec => spec?.gems ?? []).filter(id => id === RIGID_LIONSEYE);
+		expect(hitGems).toHaveLength(3); // exactly enough, not every socket
+		expect(result.hitRating).toBe(target);
 	});
 
-	it('handles "more X than Y" conditions too', () => {
-		// Mystical Skyfire Diamond: more blue gems than yellow.
-		expect(metaDeficit(25893, [GemColor.Yellow, GemColor.Yellow])).toEqual({ red: 0, yellow: 0, blue: 3 });
-		expect(metaDeficit(25893, [GemColor.Blue])).toEqual({ red: 0, yellow: 0, blue: 0 });
-	});
-
-	it('forces the configured blue gem into other sockets until the meta activates', () => {
-		const config = configWith(SOVEREIGN_AMETHYST);
-		const gear = gearWithoutBlueSockets();
-		// Precondition: nothing here would ever be socketed blue on its own.
-		const socketColors = gear.flatMap(spec => (spec ? db.sockets(db.item(spec.id)!) : []));
-		expect(socketColors).not.toContain(GemColor.Blue);
-
-		const result = applyGemPolicy(db, gear, config, MELEE_HIT, 0);
+	it('leaves the hit target unreached rather than breaking a meta that needs every colour', () => {
+		// Relentless Earthstorm wants 2 red, 2 yellow and 2 blue; trading any of
+		// them away for hit would switch it off, so the solver declines.
+		const config = flat(BOLD_CRIMSON_SPINEL, RIGID_LIONSEYE);
+		const result = applyGemPolicy(db, emptied(), config, MELEE_HIT, 100_000);
 
 		expect(metaGemActive(db, result.gear).active).toBe(true);
-		expect(result.changes.some(change => change.description.includes('forced blue'))).toBe(true);
-		expect(result.changes.some(change => change.toGemId === SOVEREIGN_AMETHYST)).toBe(true);
+		expect(result.notes.join(' ')).toMatch(/short of target/);
 	});
 
-	it('uses exactly the gem chosen in settings for the missing colour', () => {
-		const config = configWith(SOVEREIGN_AMETHYST);
-		const forced = applyGemPolicy(db, gearWithoutBlueSockets(), config, MELEE_HIT, 0).changes.filter(change =>
-			change.description.includes('forced blue'),
-		);
-		expect(forced.length).toBeGreaterThan(0);
-		expect(forced.every(change => change.toGemId === SOVEREIGN_AMETHYST)).toBe(true);
-	});
+	it('prefers a colour-matching socket when forcing a meta gem', () => {
+		// Relentless Earthstorm needs 2 of each colour; blue is supplied by the
+		// purple gem, which should land in an actual blue socket where one exists.
+		const config: Config = {
+			...baseConfig,
+			gems: { meta: CHAOTIC_SKYFIRE, base: BOLD_CRIMSON_SPINEL, hit: RIGID_LIONSEYE, metaFix: { red: BOLD_CRIMSON_SPINEL, yellow: BOLD_CRIMSON_SPINEL, blue: SOVEREIGN_AMETHYST } },
+		};
+		const gear = emptied().map(spec => {
+			if (!spec) return null;
+			const sockets = db.sockets(db.item(spec.id)!);
+			return { ...spec, gems: sockets.map(color => (color === GemColor.Meta ? CHAOTIC_SKYFIRE : 0)) };
+		});
 
-	it('says so rather than guessing when the configured gem cannot satisfy the colour', () => {
-		// A yellow gem chosen for the blue socket can never count as blue.
-		const config = configWith(BRILLIANT_LIONSEYE);
-		const result = applyGemPolicy(db, gearWithoutBlueSockets(), config, MELEE_HIT, 0);
+		const result = applyGemPolicy(db, gear, config, MELEE_HIT, 0);
+		expect(metaGemActive(db, result.gear).active).toBe(true);
 
-		expect(metaGemActive(db, result.gear).active).toBe(false);
-		expect(result.warnings.join(' ')).toMatch(/does not count as blue/);
-	});
-
-	it('leaves an already-satisfied meta gem alone', () => {
-		const result = applyGemPolicy(db, profile.equipment, baseConfig, MELEE_HIT, 0);
-		expect(result.changes.some(change => change.description.includes('forced'))).toBe(false);
+		// Every forced amethyst sits in a socket it actually matches.
+		result.gear.forEach(spec => {
+			if (!spec) return;
+			db.sockets(db.item(spec.id)!).forEach((color, idx) => {
+				if (spec.gems?.[idx] === SOVEREIGN_AMETHYST) expect(color).toBe(GemColor.Blue);
+			});
+		});
 	});
 });

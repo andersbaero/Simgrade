@@ -6,9 +6,9 @@
 // so the hit rating we solve against is the hit rating the sim will see.
 
 import { GemColor, gemEligibleForSocket, gemMatchesSocket, ItemSlot, ItemSpec, ItemType } from '../shared/wow.js';
-import { Config, SOCKET_COLOR_OF, SocketKey } from './config.js';
+import { Config, META_COLOR_OF, MetaColorKey } from './config.js';
 import { addStats, ItemDatabase, RawItem, StatMap } from './itemDb.js';
-import { isMetaGemActive, MetaColorKey, metaDeficit, metaGemConditionDescription } from './metaGems.js';
+import { isMetaGemActive, metaDeficit, metaGemConditionDescription } from '../shared/metaGems.js';
 
 export type Gear = (ItemSpec | null)[];
 
@@ -27,21 +27,6 @@ export interface GemPolicyResult {
 	notes: string[];
 	warnings: string[];
 }
-
-const socketKeyOf = (color: GemColor): SocketKey | null => {
-	switch (color) {
-		case GemColor.Red:
-			return 'red';
-		case GemColor.Yellow:
-			return 'yellow';
-		case GemColor.Blue:
-			return 'blue';
-		case GemColor.Prismatic:
-			return 'prismatic';
-		default:
-			return null;
-	}
-};
 
 export function cloneGear(gear: Gear): Gear {
 	return gear.map(item => (item ? { ...item, gems: item.gems ? [...item.gems] : undefined } : null));
@@ -127,7 +112,6 @@ interface Socket {
 	slot: ItemSlot;
 	socketIndex: number;
 	color: GemColor;
-	key: SocketKey;
 }
 
 function listSockets(db: ItemDatabase, gear: Gear): Socket[] {
@@ -137,8 +121,8 @@ function listSockets(db: ItemDatabase, gear: Gear): Socket[] {
 		const item = db.item(spec.id);
 		if (!item) return;
 		db.sockets(item).forEach((color, socketIndex) => {
-			const key = socketKeyOf(color);
-			if (key) out.push({ slot: slot as ItemSlot, socketIndex, color, key });
+			// Meta sockets are handled separately; they take only meta gems.
+			if (color !== GemColor.Meta) out.push({ slot: slot as ItemSlot, socketIndex, color });
 		});
 	});
 	return out;
@@ -175,45 +159,28 @@ export function applyGemPolicy(
 	const warnings: string[] = [];
 	const hitOf = (gemId: number) => (gemId ? (db.gemStats(gemId)[hitStatIdx] ?? 0) : 0);
 
-	// A socket colour with no configured gem borrows another colour's gem rather
-	// than being left empty.
-	const fallbackGem = (key: SocketKey): { gemId: number; borrowed: boolean } => {
-		const own = config.gems.normal[key];
-		if (own) return { gemId: own, borrowed: false };
-		for (const alt of ['red', 'yellow', 'blue', 'prismatic'] as SocketKey[]) {
-			if (config.gems.normal[alt]) return { gemId: config.gems.normal[alt], borrowed: true };
-		}
-		return { gemId: 0, borrowed: false };
-	};
-
 	/** Meta gems only fit meta sockets; every other colour fits any other socket. */
 	const canPlace = (gemId: number, socketColor: GemColor): boolean => {
 		const color = (db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor;
 		return gemEligibleForSocket(color, socketColor);
 	};
 
-	// 1. Fill any empty socket (a freshly equipped item has none socketed).
+	// 1. Fill every socket with the base gem. Socket colour is deliberately
+	// ignored: in TBC the raw gem beats the socket bonus almost every time, so
+	// the same gem goes everywhere and any forfeited bonus is reported below.
 	for (const socket of listSockets(db, gear)) {
 		if (getGem(gear, socket)) continue;
-		const { gemId: fill, borrowed } = fallbackGem(socket.key);
-		if (!fill) {
-			warnings.push(`No ${socket.key} gem configured — left an empty socket on ${slotLabel(socket.slot)}.`);
+		if (!config.gems.base) {
+			warnings.push(`No default gem configured — left an empty socket on ${slotLabel(socket.slot)}.`);
 			continue;
 		}
-		if (!canPlace(fill, socket.color)) {
-			warnings.push(`${gemName(db, fill)} cannot go in a ${socket.key} socket — left the socket on ${slotLabel(socket.slot)} empty.`);
-			continue;
-		}
-		if (borrowed) {
-			warnings.push(`No ${socket.key} gem configured — used your ${gemName(db, fill)} in the ${socket.key} socket on ${slotLabel(socket.slot)}.`);
-		}
-		setGem(gear, socket, fill);
+		setGem(gear, socket, config.gems.base);
 		changes.push({
 			slot: socket.slot,
 			socketIndex: socket.socketIndex,
 			fromGemId: 0,
-			toGemId: fill,
-			description: `${slotLabel(socket.slot)}: socketed ${gemName(db, fill)}`,
+			toGemId: config.gems.base,
+			description: `${slotLabel(socket.slot)}: socketed ${gemName(db, config.gems.base)}`,
 		});
 	}
 
@@ -224,7 +191,7 @@ export function applyGemPolicy(
 		if (!item) continue;
 		db.sockets(item).forEach((color, socketIndex) => {
 			if (color !== GemColor.Meta) return;
-			const socket: Socket = { slot: slot as ItemSlot, socketIndex, color, key: 'prismatic' };
+			const socket: Socket = { slot: slot as ItemSlot, socketIndex, color };
 			if (getGem(gear, socket)) return;
 			if (!config.gems.meta) {
 				warnings.push(`No meta gem configured — left the meta socket on ${slotLabel(slot as ItemSlot)} empty.`);
@@ -265,18 +232,20 @@ export function applyGemPolicy(
 				.sort((a, b) => deficit[b] - deficit[a])[0];
 			if (!needed) return;
 
-			const gemId = config.gems.normal[needed];
+			const gemId = config.gems.metaFix[needed];
 			if (!gemId) {
-				warnings.push(`Meta gem ${gemName(db, metaGemId)} needs ${deficit[needed]} more ${needed} gem(s), but no ${needed} gem is configured.`);
+				warnings.push(
+					`Meta gem ${gemName(db, metaGemId)} needs ${deficit[needed]} more ${needed} gem(s), but no ${needed} meta-requirement gem is configured.`,
+				);
 				return;
 			}
 
 			// The configured gem has to actually count as that colour — a red gem
 			// chosen for the blue socket will never satisfy a blue requirement.
 			const gemColor = (db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor;
-			if (!gemMatchesSocket(gemColor, SOCKET_COLOR_OF[needed])) {
+			if (!gemMatchesSocket(gemColor, META_COLOR_OF[needed])) {
 				warnings.push(
-					`Meta gem ${gemName(db, metaGemId)} needs a ${needed} gem, but the configured ${needed} gem (${gemName(db, gemId)}) does not count as ${needed}.`,
+					`Meta gem ${gemName(db, metaGemId)} needs a ${needed} gem, but the one configured for ${needed} (${gemName(db, gemId)}) does not count as ${needed}.`,
 				);
 				return;
 			}
@@ -300,13 +269,13 @@ export function applyGemPolicy(
 	};
 
 	/**
-	 * The cheapest socket to give up for a meta colour: one whose item has no
-	 * socket bonus at all, then one whose bonus is already lost, and only then a
-	 * socket that still earns one. Sockets already counting toward the colour are
-	 * useless here, and hit gems are left alone where possible.
+	 * Where to put a forced meta gem. A socket of that colour is free — it keeps
+	 * its socket bonus — so try those first, then the cheapest sacrifice: an item
+	 * with no socket bonus, then one whose bonus is already lost. Hit gems are
+	 * displaced last so the hit solving is not undone.
 	 */
 	const pickSocketToSacrifice = (needed: MetaColorKey, gemId: number): Socket | null => {
-		const wanted = SOCKET_COLOR_OF[needed];
+		const wanted = META_COLOR_OF[needed];
 		const candidates = listSockets(db, gear).filter(socket => {
 			const current = getGem(gear, socket);
 			if (current === gemId) return false;
@@ -315,20 +284,21 @@ export function applyGemPolicy(
 			return !gemMatchesSocket(currentColor, wanted);
 		});
 
+		const gemColor = (db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor;
 		const cost = (socket: Socket): number => {
+			// Free: the gem matches this socket, so no bonus is given up.
+			if (gemMatchesSocket(gemColor, socket.color)) return 0;
 			const item = db.item(gear[socket.slot]!.id)!;
-			const hasBonus = Object.keys(db.socketBonusStats(item)).length > 0;
-			if (!hasBonus) return 0;
-			if (!hasSocketBonus(db, item, gear[socket.slot]!.gems ?? [])) return 1;
-			return 2;
+			if (Object.keys(db.socketBonusStats(item)).length === 0) return 1;
+			if (!hasSocketBonus(db, item, gear[socket.slot]!.gems ?? [])) return 2;
+			return 3;
 		};
 
 		return (
 			candidates.sort((a, b) => {
 				const byCost = cost(a) - cost(b);
 				if (byCost !== 0) return byCost;
-				// Prefer displacing a plain gem over one carrying hit.
-				const isHit = (socket: Socket) => (getGem(gear, socket) === config.gems.hit[socket.key] ? 1 : 0);
+				const isHit = (socket: Socket) => (getGem(gear, socket) === config.gems.hit ? 1 : 0);
 				return isHit(a) - isHit(b) || a.slot - b.slot || a.socketIndex - b.socketIndex;
 			})[0] ?? null
 		);
@@ -336,10 +306,15 @@ export function applyGemPolicy(
 
 	forceMetaColors();
 
-	// 2. Order sockets by the configured swap priority so the choice is deterministic.
-	const priority = new Map(config.hitSwapPriority.map((key, idx) => [key, idx]));
+	// 2. Convert sockets whose socket bonus is already forfeited first — with one
+	// gem everywhere, that is the only thing distinguishing one socket from another.
+	const bonusIntact = (socket: Socket): number => {
+		const item = db.item(gear[socket.slot]!.id);
+		if (!item || Object.keys(db.socketBonusStats(item)).length === 0) return 0;
+		return hasSocketBonus(db, item, gear[socket.slot]!.gems ?? []) ? 1 : 0;
+	};
 	const ordered = listSockets(db, gear).sort(
-		(a, b) => (priority.get(a.key) ?? 99) - (priority.get(b.key) ?? 99) || a.slot - b.slot || a.socketIndex - b.socketIndex,
+		(a, b) => bonusIntact(a) - bonusIntact(b) || a.slot - b.slot || a.socketIndex - b.socketIndex,
 	);
 
 	const metaBefore = metaGemActive(db, gear);
@@ -365,25 +340,24 @@ export function applyGemPolicy(
 	let hit = gearHitRating(db, gear, hitStatIdx);
 	let blockedByMeta = false;
 
-	// 2a. Short of the target: upgrade normal gems to hit gems.
+	const baseGem = config.gems.base;
+	const hitGem = config.gems.hit;
+	const canTrade = baseGem && hitGem && hitOf(hitGem) > hitOf(baseGem);
+
+	// 2a. Short of the target: convert base gems to hit gems, only as many as needed.
 	for (const socket of ordered) {
-		if (hit >= targetHitRating) break;
-		const normalGem = config.gems.normal[socket.key];
-		const hitGem = config.gems.hit[socket.key];
-		if (!hitGem || !normalGem || getGem(gear, socket) !== normalGem) continue;
-		if (hitOf(hitGem) <= hitOf(normalGem)) continue;
+		if (!canTrade || hit >= targetHitRating) break;
+		if (getGem(gear, socket) !== baseGem) continue;
 		if (trySwap(socket, hitGem)) hit = gearHitRating(db, gear, hitStatIdx);
 		else blockedByMeta = true;
 	}
 
-	// 2b. Over the target: reclaim hit gems for normal ones while staying at or above it.
+	// 2b. Over the target: reclaim hit gems while staying at or above it.
 	for (const socket of [...ordered].reverse()) {
-		const normalGem = config.gems.normal[socket.key];
-		const hitGem = config.gems.hit[socket.key];
-		if (!hitGem || !normalGem || getGem(gear, socket) !== hitGem) continue;
-		const surplus = hit - targetHitRating;
-		if (surplus < hitOf(hitGem) - hitOf(normalGem)) continue;
-		if (trySwap(socket, normalGem)) hit = gearHitRating(db, gear, hitStatIdx);
+		if (!canTrade) break;
+		if (getGem(gear, socket) !== hitGem) continue;
+		if (hit - targetHitRating < hitOf(hitGem) - hitOf(baseGem)) continue;
+		if (trySwap(socket, baseGem)) hit = gearHitRating(db, gear, hitStatIdx);
 		else blockedByMeta = true;
 	}
 

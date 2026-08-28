@@ -9,15 +9,15 @@ import { ItemDatabase } from './itemDb.js';
 import { CONFIG_PATH } from './paths.js';
 import type { ParsedProfile } from './profile.js';
 
-export type SocketKey = 'red' | 'yellow' | 'blue' | 'prismatic';
+/** The three colours a meta gem can demand. */
+export type MetaColorKey = 'red' | 'yellow' | 'blue';
 
-export const SOCKET_KEYS: SocketKey[] = ['red', 'yellow', 'blue', 'prismatic'];
+export const META_COLOR_KEYS: MetaColorKey[] = ['red', 'yellow', 'blue'];
 
-export const SOCKET_COLOR_OF: Record<SocketKey, GemColor> = {
+export const META_COLOR_OF: Record<MetaColorKey, GemColor> = {
 	red: GemColor.Red,
 	yellow: GemColor.Yellow,
 	blue: GemColor.Blue,
-	prismatic: GemColor.Prismatic,
 };
 
 export interface HitTarget {
@@ -40,12 +40,14 @@ export interface Config {
 	metric: 'auto' | 'dps' | 'hps' | 'tps';
 	hitStat: 'auto' | 'spell' | 'melee';
 	hitTarget: HitTarget;
-	/** Order in which sockets are considered when adding or removing hit gems. */
-	hitSwapPriority: SocketKey[];
 	gems: {
 		meta: number;
-		normal: Record<SocketKey, number>;
-		hit: Record<SocketKey, number>;
+		/** Goes in every socket, whatever colour it is. */
+		base: number;
+		/** Swapped in over `base`, only until the hit target is reached. */
+		hit: number;
+		/** Used solely to satisfy a meta gem's colour requirement. */
+		metaFix: Record<MetaColorKey, number>;
 	};
 	/** Enchant effect IDs applied to a slot when the replaced item's enchant does not fit. */
 	defaultEnchants: Partial<Record<ItemSlot, number>>;
@@ -65,9 +67,7 @@ export const DEFAULT_CONFIG: Config = {
 	metric: 'auto',
 	hitStat: 'auto',
 	hitTarget: { mode: 'keepCurrent', gearRating: 0, totalPercent: 16, externalPercent: 0 },
-	// Yellow first: TBC's pure hit gems are yellow, so a yellow socket keeps its bonus.
-	hitSwapPriority: ['yellow', 'prismatic', 'red', 'blue'],
-	gems: { meta: 0, normal: { red: 0, yellow: 0, blue: 0, prismatic: 0 }, hit: { red: 0, yellow: 0, blue: 0, prismatic: 0 } },
+	gems: { meta: 0, base: 0, hit: 0, metaFix: { red: 0, yellow: 0, blue: 0 } },
 	defaultEnchants: {},
 	hitTolerance: 10,
 	maxBenchVariants: 2,
@@ -98,10 +98,9 @@ export function resolveMetric(config: Config, profile: ParsedProfile): 'dps' | '
 export function suggestGems(db: ItemDatabase, profile: ParsedProfile, hitStat: 'spell' | 'melee'): Config['gems'] {
 	const hitIdx = hitStatIndex(hitStat);
 
-	// Count what the character actually puts in each socket colour, not what the
-	// gem's own colour is — someone who already runs red gems in yellow sockets
-	// should get that back as their default, not a "correct" yellow gem.
-	const usageBySocket = new Map<SocketKey, Map<number, number>>(SOCKET_KEYS.map(key => [key, new Map()]));
+	// What the character actually socketed, ignoring socket colour — the same
+	// gem in every hole is how gemming really works.
+	const usage = new Map<number, number>();
 	let meta = 0;
 
 	for (const spec of profile.equipment) {
@@ -111,22 +110,16 @@ export function suggestGems(db: ItemDatabase, profile: ParsedProfile, hitStat: '
 		db.sockets(item).forEach((socketColor, socketIndex) => {
 			const gemId = spec.gems?.[socketIndex] ?? 0;
 			if (!gemId) return;
-			if (socketColor === GemColor.Meta) {
-				meta ||= gemId;
-				return;
-			}
-			const key = SOCKET_KEYS.find(candidate => SOCKET_COLOR_OF[candidate] === socketColor);
-			if (!key) return;
-			const counts = usageBySocket.get(key)!;
-			counts.set(gemId, (counts.get(gemId) ?? 0) + 1);
+			if (socketColor === GemColor.Meta) meta ||= gemId;
+			else usage.set(gemId, (usage.get(gemId) ?? 0) + 1);
 		});
 	}
 
-	const mostUsedIn = (key: SocketKey): number => {
+	const mostUsed = (predicate: (gemId: number) => boolean): number => {
 		let bestId = 0;
 		let bestCount = 0;
-		for (const [gemId, count] of usageBySocket.get(key) ?? []) {
-			if (count > bestCount) {
+		for (const [gemId, count] of usage) {
+			if (count > bestCount && predicate(gemId)) {
 				bestCount = count;
 				bestId = gemId;
 			}
@@ -134,27 +127,22 @@ export function suggestGems(db: ItemDatabase, profile: ParsedProfile, hitStat: '
 		return bestId;
 	};
 
-	/**
-	 * The strongest hit gem that still matches the socket. TBC only has pure hit
-	 * gems in yellow, so red and blue sockets fall back to a hybrid that carries
-	 * hit (e.g. Glinting Pyrestone) rather than nothing at all. This is only the
-	 * starting suggestion — any gem of any colour can be chosen instead.
-	 */
-	const bestHitFor = (key: SocketKey): number => {
-		const socketColor = SOCKET_COLOR_OF[key];
+	const countsAs = (gemId: number, key: MetaColorKey) =>
+		gemMatchesSocket((db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor, META_COLOR_OF[key]);
+
+	/** The strongest gem carrying the relevant hit stat, colour irrelevant. */
+	const bestHit = (): number => {
 		let bestId = 0;
 		let bestScore = 0;
 		for (const gem of db.gems.values()) {
-			if (gem.unique || gem.requiredProfession) continue;
-			if ((gem.quality ?? 0) < 3) continue;
-			const color = (gem.color ?? 0) as GemColor;
-			if (!gemMatchesSocket(color, socketColor)) continue;
+			if (gem.unique || gem.requiredProfession || (gem.quality ?? 0) < 3) continue;
+			if ((gem.color ?? 0) === GemColor.Meta) continue;
 
 			const stats = db.gemStats(gem.id);
 			const hit = stats[hitIdx] ?? 0;
 			if (!hit) continue;
 
-			// Rank by hit first, then prefer the purest gem so the swap gives up least.
+			// Most hit first, then the purest gem so the swap gives up least.
 			const score = hit * 100 - Object.keys(stats).length;
 			if (score > bestScore) {
 				bestScore = score;
@@ -164,13 +152,31 @@ export function suggestGems(db: ItemDatabase, profile: ParsedProfile, hitStat: '
 		return bestId;
 	};
 
-	const normal = {} as Record<SocketKey, number>;
-	const hit = {} as Record<SocketKey, number>;
-	for (const key of SOCKET_KEYS) {
-		normal[key] = mostUsedIn(key);
-		hit[key] = bestHitFor(key);
-	}
-	return { meta, normal, hit };
+	/** A gem that counts as the colour: one already worn, else the best epic one. */
+	const bestFor = (key: MetaColorKey): number => {
+		const worn = mostUsed(gemId => countsAs(gemId, key));
+		if (worn) return worn;
+
+		let bestId = 0;
+		let bestQuality = -1;
+		for (const gem of db.gems.values()) {
+			if (gem.unique || gem.requiredProfession) continue;
+			if (!countsAs(gem.id, key)) continue;
+			const quality = (gem.quality ?? 0) * 100 + (gem.phase ?? 0);
+			if (quality > bestQuality) {
+				bestQuality = quality;
+				bestId = gem.id;
+			}
+		}
+		return bestId;
+	};
+
+	return {
+		meta,
+		base: mostUsed(() => true),
+		hit: bestHit(),
+		metaFix: { red: bestFor('red'), yellow: bestFor('yellow'), blue: bestFor('blue') },
+	};
 }
 
 /** Carries the character's existing enchants forward as the per-slot defaults. */
@@ -182,20 +188,70 @@ export function suggestEnchants(profile: ParsedProfile): Partial<Record<ItemSlot
 	return out;
 }
 
-export function loadConfig(): Config {
-	if (!fs.existsSync(CONFIG_PATH)) return structuredClone(DEFAULT_CONFIG);
-	const stored = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) as Partial<Config>;
+/** The nine-gem, per-socket-colour shape this used to store. */
+interface LegacyGems {
+	meta?: number;
+	normal?: Record<string, number>;
+	hit?: Record<string, number>;
+}
+
+const mostCommon = (values: number[]): number => {
+	const counts = new Map<number, number>();
+	for (const value of values) if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+	return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+};
+
+/**
+ * Collapses the old per-socket-colour gems into the flat shape. In practice
+ * those nine fields already held one gem repeated, plus whatever was set aside
+ * for the meta requirement, so this loses nothing.
+ */
+export function migrateGems(legacy: LegacyGems, db?: ItemDatabase): Config['gems'] {
+	const normal = legacy.normal ?? {};
+	const countsAs = (gemId: number, key: MetaColorKey) =>
+		!!gemId && !!db && gemMatchesSocket((db.gem(gemId)?.color ?? GemColor.Unknown) as GemColor, META_COLOR_OF[key]);
+
 	return {
+		meta: legacy.meta ?? 0,
+		base: mostCommon(Object.values(normal)),
+		hit: mostCommon(Object.values(legacy.hit ?? {})),
+		// The old per-colour gem is the natural meta-fix gem, but only when it
+		// genuinely counts as that colour — a red gem chosen for the yellow
+		// socket never could.
+		metaFix: {
+			red: countsAs(normal.red ?? 0, 'red') ? normal.red! : 0,
+			yellow: countsAs(normal.yellow ?? 0, 'yellow') ? normal.yellow! : 0,
+			blue: countsAs(normal.blue ?? 0, 'blue') ? normal.blue! : 0,
+		},
+	};
+}
+
+export function loadConfig(db?: ItemDatabase): Config {
+	if (!fs.existsSync(CONFIG_PATH)) return structuredClone(DEFAULT_CONFIG);
+	const stored = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) as Partial<Config> & { gems?: LegacyGems };
+
+	const legacy = stored.gems && typeof (stored.gems as LegacyGems).normal === 'object';
+	const gems = legacy
+		? migrateGems(stored.gems as LegacyGems, db)
+		: {
+				meta: stored.gems?.meta ?? 0,
+				base: (stored.gems as Config['gems'])?.base ?? 0,
+				hit: (stored.gems as Config['gems'])?.hit ?? 0,
+				metaFix: { ...DEFAULT_CONFIG.gems.metaFix, ...((stored.gems as Config['gems'])?.metaFix ?? {}) },
+			};
+
+	const merged = {
 		...structuredClone(DEFAULT_CONFIG),
 		...stored,
 		hitTarget: { ...DEFAULT_CONFIG.hitTarget, ...(stored.hitTarget ?? {}) },
-		gems: {
-			meta: stored.gems?.meta ?? 0,
-			normal: { ...DEFAULT_CONFIG.gems.normal, ...(stored.gems?.normal ?? {}) },
-			hit: { ...DEFAULT_CONFIG.gems.hit, ...(stored.gems?.hit ?? {}) },
-		},
+		gems,
 		defaultEnchants: stored.defaultEnchants ?? {},
 	};
+
+	// Settings that no longer exist would otherwise ride along forever via the
+	// spread above and be written straight back out on the next save.
+	for (const dead of ['hitSwapPriority', 'maxBundleSize']) delete (merged as Record<string, unknown>)[dead];
+	return merged as Config;
 }
 
 export function saveConfig(config: Config): void {
@@ -209,10 +265,9 @@ export function withSuggestions(config: Config, db: ItemDatabase, profile: Parse
 	const merged = structuredClone(config);
 
 	merged.gems.meta ||= suggested.meta;
-	for (const key of SOCKET_KEYS) {
-		merged.gems.normal[key] ||= suggested.normal[key];
-		merged.gems.hit[key] ||= suggested.hit[key];
-	}
+	merged.gems.base ||= suggested.base;
+	merged.gems.hit ||= suggested.hit;
+	for (const key of META_COLOR_KEYS) merged.gems.metaFix[key] ||= suggested.metaFix[key];
 	if (Object.keys(merged.defaultEnchants).length === 0) merged.defaultEnchants = suggestEnchants(profile);
 	return merged;
 }

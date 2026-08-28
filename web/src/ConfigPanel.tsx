@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 
+import { metaGemConditionDescription } from '../../shared/metaGems';
 import { GemColor } from '../../shared/wow';
 import { api } from './api';
 import GemSelect from './GemSelect';
@@ -12,17 +13,17 @@ interface Props {
 	onSaved: () => void;
 }
 
-const SOCKETS = [
-	{ key: 'red', color: GemColor.Red, label: 'Red socket' },
-	{ key: 'yellow', color: GemColor.Yellow, label: 'Yellow socket' },
-	{ key: 'blue', color: GemColor.Blue, label: 'Blue socket' },
-	{ key: 'prismatic', color: GemColor.Prismatic, label: 'Prismatic socket' },
+const META_COLORS = [
+	{ key: 'red', color: GemColor.Red, label: 'red', hint: 'Purple and orange gems count as red too.' },
+	{ key: 'yellow', color: GemColor.Yellow, label: 'yellow', hint: 'Orange and green gems count as yellow too.' },
+	{ key: 'blue', color: GemColor.Blue, label: 'blue', hint: 'Purple and green gems count as blue too.' },
 ] as const;
 
 export default function ConfigPanel({ config, profile, onSaved }: Props) {
 	const [draft, setDraft] = useState<AppConfig>(config);
 	const [gems, setGems] = useState<GemOption[]>([]);
 	const [saved, setSaved] = useState(false);
+	const metaRequirement = metaGemConditionDescription(draft.gems.meta);
 
 	useEffect(() => setDraft(config), [config]);
 	useEffect(() => {
@@ -113,47 +114,62 @@ export default function ConfigPanel({ config, profile, onSaved }: Props) {
 			<div className="panel">
 				<h2>Gems</h2>
 				<p className="muted small" style={{ marginTop: 0 }}>
-					Every socket can take a gem of any colour — put a red gem in a yellow socket if that is what you run. Type in a picker to search all 214
-					gems by name or stat; partial words are fine (“bold spin”, “hit”). Defaults are read from what you already have socketed. New items get
-					the normal gem; the hit gem is swapped in only when the hit target needs it, and never at the cost of your meta gem.
+					One gem goes in every socket, whatever colour the socket is — that is how gemming actually works in TBC, where the raw gem beats the
+					socket bonus almost every time. Any socket bonus given up is reported on each result row. Type in a picker to search every gem by name
+					or stat; partial words are fine (“runed ruby”, “spell hit”). Defaults are read from what you already have socketed.
 				</p>
-				<div className="grid" style={{ gridTemplateColumns: 'minmax(120px, auto) 1fr 1fr', alignItems: 'start' }}>
-					<div className="small muted">Socket</div>
-					<div className="small muted">Normal gem</div>
-					<div className="small muted">Hit gem</div>
-					{SOCKETS.map(socket => (
-						<Fragment key={socket.key}>
+				<div className="grid" style={{ gridTemplateColumns: 'minmax(150px, auto) 1fr 2fr', alignItems: 'start', rowGap: 14 }}>
+					<div className="row" style={{ gap: 6, paddingTop: 7 }}>
+						<span className="socket" style={{ background: SOCKET_CSS[GemColor.Red] }} />
+						Default gem
+					</div>
+					<GemSelect value={draft.gems.base} gems={gems} socketColor={GemColor.Prismatic} onChange={id => patch({ gems: { ...draft.gems, base: id } })} />
+					<div className="small muted" style={{ paddingTop: 7 }}>Goes in every socket unless something below overrides it.</div>
+
+					<div className="row" style={{ gap: 6, paddingTop: 7 }}>
+						<span className="socket" style={{ background: SOCKET_CSS[GemColor.Yellow] }} />
+						When short on hit
+					</div>
+					<GemSelect value={draft.gems.hit} gems={gems} socketColor={GemColor.Prismatic} onChange={id => patch({ gems: { ...draft.gems, hit: id } })} />
+					<div className="small muted" style={{ paddingTop: 7 }}>
+						Swapped in over the default, one socket at a time, only until the hit target is reached — never further.
+					</div>
+
+					<div className="row" style={{ gap: 6, paddingTop: 7 }}>
+						<span className="socket" style={{ background: SOCKET_CSS[GemColor.Meta] }} />
+						Meta gem
+					</div>
+					<GemSelect value={draft.gems.meta} gems={gems} socketColor={GemColor.Meta} onChange={id => patch({ gems: { ...draft.gems, meta: id } })} />
+					<div className="small muted" style={{ paddingTop: 7 }}>Only meta gems fit the meta socket.</div>
+				</div>
+			</div>
+
+			<div className="panel">
+				<h2>Meta gem requirements</h2>
+				<p className="muted small" style={{ marginTop: 0 }}>
+					Used only when your meta gem’s colour requirement can’t be met otherwise — Chaotic Skyfire Diamond wants two blue gems, for instance,
+					and you may own no blue sockets. Enough of these are forced in to switch the meta on, preferring sockets where they cost nothing. An
+					inactive meta loses its whole stat line, which dwarfs a socket bonus.
+					{metaRequirement && <> Yours: <strong style={{ color: 'var(--text)' }}>{metaRequirement}</strong></>}
+				</p>
+				<div className="grid" style={{ gridTemplateColumns: 'minmax(150px, auto) 1fr 2fr', alignItems: 'start', rowGap: 14 }}>
+					{META_COLORS.map(entry => (
+						<Fragment key={entry.key}>
 							<div className="row" style={{ gap: 6, paddingTop: 7 }}>
-								<span className="socket" style={{ background: SOCKET_CSS[socket.color] ?? '#555' }} />
-								{socket.label}
+								<span className="socket" style={{ background: SOCKET_CSS[entry.color] }} />
+								Counts as {entry.label}
 							</div>
 							<GemSelect
-								value={draft.gems.normal[socket.key] ?? 0}
+								value={draft.gems.metaFix[entry.key] ?? 0}
 								gems={gems}
-								socketColor={socket.color}
-								onChange={id => patch({ gems: { ...draft.gems, normal: { ...draft.gems.normal, [socket.key]: id } } })}
+								socketColor={entry.color}
+								onChange={id => patch({ gems: { ...draft.gems, metaFix: { ...draft.gems.metaFix, [entry.key]: id } } })}
 							/>
-							<GemSelect
-								value={draft.gems.hit[socket.key] ?? 0}
-								gems={gems}
-								socketColor={socket.color}
-								onChange={id => patch({ gems: { ...draft.gems, hit: { ...draft.gems.hit, [socket.key]: id } } })}
-							/>
+							<div className="small muted" style={{ paddingTop: 7 }}>
+								{entry.hint}
+							</div>
 						</Fragment>
 					))}
-					<div className="row" style={{ gap: 6, paddingTop: 7 }}>
-						<span className="socket" style={{ background: SOCKET_CSS[GemColor.Meta] ?? '#555' }} />
-						Meta socket
-					</div>
-					<GemSelect
-						value={draft.gems.meta}
-						gems={gems}
-						socketColor={GemColor.Meta}
-						onChange={id => patch({ gems: { ...draft.gems, meta: id } })}
-					/>
-					<div className="small muted" style={{ paddingTop: 7 }}>
-						Used for the empty meta socket on a new helm. Only meta gems fit here.
-					</div>
 				</div>
 			</div>
 

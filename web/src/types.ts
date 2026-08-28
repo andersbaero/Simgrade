@@ -35,8 +35,7 @@ export interface AppConfig {
 	metric: string;
 	hitStat: string;
 	hitTarget: { mode: 'keepCurrent' | 'gearRating' | 'totalPercent'; gearRating: number; totalPercent: number; externalPercent: number };
-	hitSwapPriority: string[];
-	gems: { meta: number; normal: Record<string, number>; hit: Record<string, number> };
+	gems: { meta: number; base: number; hit: number; metaFix: Record<string, number> };
 	deltaBasis: 'tuned' | 'raw';
 }
 

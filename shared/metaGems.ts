@@ -2,7 +2,7 @@
 // These are hardcoded upstream too (they aren't in db.json), so this table is
 // the one piece of wowsims logic we carry rather than read.
 
-import { GemColor, gemMatchesSocket } from '../shared/wow.js';
+import { GemColor, gemMatchesSocket } from './wow.js';
 
 interface MetaGemCondition {
 	description: string;

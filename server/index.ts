@@ -167,7 +167,7 @@ app.get('/api/gems', async () => {
 	const config = effectiveConfig(currentProfile());
 	// Gem ids the config already points at must survive de-duplication, or the
 	// picker would show an empty box for a perfectly valid choice.
-	const inUse = new Set([config.gems.meta, ...Object.values(config.gems.normal), ...Object.values(config.gems.hit)]);
+	const inUse = new Set([config.gems.meta, config.gems.base, config.gems.hit, ...Object.values(config.gems.metaFix)]);
 	// A handful of TBC gems exist under two ids with identical stats; show one.
 	const seen = new Set<string>();
 

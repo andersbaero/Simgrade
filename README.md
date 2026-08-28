@@ -108,75 +108,24 @@ cached, so unaffected items are not re-run.
 
 ## Gemming policy
 
-Configured in the **Settings** tab.
+Configured in the **Settings** tab. Three decisions, not nine:
 
-- Each socket colour has a **normal gem** and a **hit gem**, and **any gem colour can be chosen
-  for any socket** — a red gem in a yellow socket is a normal thing to want, so nothing stops
-  you. The only hard rule is the game's own: meta gems go in meta sockets and nothing else does.
-- **The pickers are searchable.** Type to filter all 200-odd gems by name, stat or colour.
-  Partial words in any order work (`bold spin`, `spell hit`, `meta crit`), and dropped letters
-  still find it (`vld pyre` → Veiled Pyrestone). Arrow keys and Enter to pick, Escape to close.
-- When a chosen gem doesn't match the socket, the picker says *off-colour — forfeits the socket
-  bonus*, and each result row lists which items lost a bonus that way. It's your call; it just
-  isn't silent.
-- **Defaults are read from what you actually have socketed**, per socket colour — not from what
-  "should" go there. If you already run red gems in your yellow sockets, that's what comes back
-  as your yellow default.
-- New items are socketed with the normal gem.
-- If total gear hit is **below** the target, normal gems are traded up to hit gems, cheapest
-  socket first (yellow before prismatic before red before blue by default, since TBC's pure hit
-  gems are yellow).
-- If it is **above** the target, hit gems are traded back down for normal ones while staying on
-  target.
-- **Your meta gem is always made active.** If its colour requirement isn't met — you run
-  Chaotic Skyfire Diamond but own no blue sockets, say — the gem you picked for that colour in
-  settings is forced into a socket of another colour until the requirement is satisfied. An
-  inactive meta is a flat loss of its entire stat line, which dwarfs the socket bonus given up.
-  It picks the cheapest sockets first: items with no socket bonus, then ones whose bonus is
-  already forfeited, and it avoids displacing hit gems. Each forced gem is listed on the row.
-- Any swap that would deactivate your meta gem is rejected. If the hit target can't be reached
-  without breaking it, the row says how far short it fell and why.
-- A socket colour you have no gem configured for borrows another colour's gem rather than being
-  left empty, and says so.
+- **Default gem** — goes in *every* socket, whatever colour that socket is. In TBC the raw gem
+  beats the socket bonus almost every time, so matching colours is usually the wrong instinct.
+- **When short on hit** — swapped in over the default, one socket at a time, and only until the
+  hit target is reached. Never further; hit past the cap is dead weight.
+- **Meta gem**, plus a **red / yellow / blue gem for meta requirements** — used *only* when the
+  meta's colour requirement can't be met otherwise. Chaotic Skyfire Diamond wants two blue gems
+  and you may own no blue sockets, so enough of these are forced in to switch it on, preferring
+  sockets where they cost nothing. An inactive meta loses its whole stat line, which dwarfs any
+  socket bonus.
 
-### Tier sets
+Everything is searchable by name or stat, partial words in any order. Defaults are read from what
+you already have socketed, so a fresh import needs no setup.
 
-Set bonuses come from the five armour slots at 2 and 4 pieces, so a single tier swap can be a
-DPS *loss* by dropping you under a threshold while two together are a large gain. Alongside the
-single swaps, the run sims every **bundle** of your selected pieces that lands exactly on a
-threshold — if you wear none of a set and select four pieces, that is the six two-piece bundles
-*and* the four-piece one.
-
-### Switching characters
-
-Your item list and bench are saved per install, not per character. Importing a different profile
-prunes both lists to what the new character can actually wear — armour type, class restrictions
-and weapon skills — and tells you what it dropped, rather than quietly simming a warrior's plate
-on a warlock.
-
-### Bag / bench items
-
-Gear you own but don't wear — the spare ring without hit, the off-set helm you kept — can be
-listed at the bottom of the **Profile** tab. Bench items **never compete as upgrades**. They are
-only ever swapped in to land you on the hit target, and only when gems alone can't:
-
-- A candidate pushes you **over** the cap and there are no hit gems left to reclaim → the run
-  tries bench items that shed hit.
-- A candidate leaves you **under** the cap and the sockets are exhausted → it tries bench items
-  that add hit.
-- Gems already land within `hitTolerance` (default 10 rating) of target → the bench is not
-  touched at all, and no extra sims are run.
-
-Both layouts are simmed — the gem-only fix and the bench swap — and the row shows whichever
-actually wins, with a note naming the swap:
-
-> *Bench: Band of the Abyssal Lord in for an empty slot — adds hit (240 → 261, target 320).*
-
-The same treatment is applied to your **baseline**, so a candidate is never credited with a hit
-fix that was available to you without it. At most `maxBenchVariants` (default 2) swaps are simmed
-per candidate, and a swap is only considered if it gets strictly closer to target — and never by
-dropping below it. A bench item is assumed to be enchanted and gemmed by the same policy as any
-other new item.
+Forfeited socket bonuses are still **reported** on every result row — ignoring them is a default,
+not a blind spot. Any swap that would deactivate your meta gem is refused, and if the hit target
+can't be reached without breaking it, the row says how far short it fell and why.
 
 **Hit target** has three modes:
 
