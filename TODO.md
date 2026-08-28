@@ -74,7 +74,39 @@ The rule that holds for all of these: anything that is not a full
 else alone. That is what keeps the guarantee the tool rests on — between
 baseline and candidate, only the gear differs.
 
-## 3. Repository hygiene — two left, both needing you
+## 3. Don't chase a hit target that isn't worth reaching
+
+The hit target never filters candidates — `candidates.ts` has no notion of hit, so an item good
+enough to take under the cap is simmed and ranked honestly, with the shortfall noted on the row.
+That part is fine.
+
+The *gemming* is not. The solver obeys the target blindly, so a target set higher than it is worth
+costs DPS, and an unreachable one costs the most: every convertible socket is spent and the target
+is still missed. Measured on the demo warrior, whose gear carries 220 hit:
+
+```
+target +0    reached  hit 220   0 gems   949.37 DPS
+target +20   reached  hit 240   2 gems   944.26 DPS
+target +60   reached  hit 280   6 gems   930.73 DPS
+target +400  MISSED   hit 290   7 gems   927.33 DPS   <- 22 DPS worse
+```
+
+The default (`keepCurrent`) converts nothing and is safe; this only bites someone who types a
+higher target.
+
+The fix follows the pattern already used for bench swaps and socket-bonus matching: sim the
+un-chased layout as a competing variant and let the result decide. Scope is the open question —
+
+- **Unreachable only.** The clear-cut case. Costs one extra sim, and only for candidates that
+  miss, since most reach target and add nothing.
+- **Always both.** Also catches a target merely set too high — the `+20` row above already costs
+  5 DPS — but doubles sims on every socketed candidate and second-guesses a number the user chose
+  deliberately.
+
+Either way, say on the row when the un-chased layout won: that is the signal the target is set
+higher than it is worth.
+
+## 4. Repository hygiene — two left, both needing you
 
 Done: MIT LICENSE, a `test.yml` running on every push and pull request, and `actions/cache` on the
 56 MB sim runtime keyed by `data/release.json`.
