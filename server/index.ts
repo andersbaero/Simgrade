@@ -8,17 +8,8 @@ import { GEM_COLOR_NAMES, Profession, STAT_NAMES } from '../shared/wow.js';
 import { Config, loadConfig, saveConfig, resolveHitStat, resolveMetric, hitStatIndex, withSuggestions } from './config.js';
 import { describeStats, loadItemDatabase } from './itemDb.js';
 import { ensureRuntime } from './bootstrap.js';
-import {
-	BENCH_PATH,
-	CONFIG_PATH,
-	LAST_RUN_PATH,
-	PROFILE_PATH,
-	RELEASE_PATH,
-	SELECTION_PATH,
-	STATE_DIR,
-	STATE_DIR_IS_FALLBACK,
-	uiBinary,
-} from './paths.js';
+import { benchPath, lastRunPath, RELEASE_PATH, selectionPath, STATE_DIR, STATE_DIR_IS_FALLBACK, uiBinary } from './paths.js';
+import * as profiles from './profiles.js';
 import { loadWebAssets, resolveAsset } from './staticAssets.js';
 import { ParsedProfile, ProfileError, parseProfile } from './profile.js';
 import { RunManager, resolveTargetHitRating } from './run.js';
@@ -62,17 +53,10 @@ function usableIds(path: string, profile: ParsedProfile | null): { ids: number[]
 	return { ids: kept, dropped };
 }
 
-function currentProfile(): ParsedProfile | null {
-	if (!fs.existsSync(PROFILE_PATH)) return null;
-	try {
-		return parseProfile(readJson(PROFILE_PATH, null));
-	} catch {
-		return null;
-	}
-}
+const currentProfile = (): ParsedProfile | null => profiles.activeProfile();
 
 function effectiveConfig(profile: ParsedProfile | null): Config {
-	const config = loadConfig();
+	const config = loadConfig(loadItemDatabase(), profiles.activeId());
 	return profile ? withSuggestions(config, loadItemDatabase(), profile) : config;
 }
 
@@ -82,8 +66,9 @@ app.get('/api/state', async () => {
 	const profile = currentProfile();
 	const config = effectiveConfig(profile);
 	const release = readJson(RELEASE_PATH, { version: 'unknown' });
-	const selection = usableIds(SELECTION_PATH, profile);
-	const bench = usableIds(BENCH_PATH, profile);
+	const id = profiles.activeId();
+	const selection = usableIds(id ? selectionPath(id) : '', profile);
+	const bench = usableIds(id ? benchPath(id) : '', profile);
 
 	let summary = null;
 	if (profile) {
@@ -118,6 +103,8 @@ app.get('/api/state', async () => {
 		selection: selection.ids,
 		bench: bench.ids,
 		version: appVersion(),
+		profiles: profiles.list().map(entry => ({ id: entry.id, label: entry.label, className: entry.className, spec: entry.spec })),
+		activeProfileId: profiles.activeId(),
 		update: update && { latest: update.latest, url: update.url, downloadable: !!update.asset },
 		// Surfaced so a vanishing item is explained rather than just gone.
 		dropped: dropped.map(item => item.name),
@@ -135,12 +122,21 @@ app.post<{ Body: { json: string } }>('/api/profile', async (request, reply) => {
 
 	try {
 		const profile = parseProfile(parsed);
-		fs.writeFileSync(PROFILE_PATH, JSON.stringify(parsed, null, 1));
-		// Re-derive gem/enchant defaults for the new character, keeping explicit choices.
-		if (!fs.existsSync(CONFIG_PATH)) saveConfig(withSuggestions(loadConfig(), loadItemDatabase(), profile));
+		const result = profiles.createOrUpdate(parsed, profile);
 
-		const dropped = [...usableIds(SELECTION_PATH, profile).dropped, ...usableIds(BENCH_PATH, profile).dropped];
-		return { ok: true, className: profile.className, spec: profile.spec.label, dropped: dropped.map(item => item.name) };
+		// A new character starts from gems and enchants read off its own gear.
+		if (result.created) saveConfig(withSuggestions(loadConfig(loadItemDatabase(), result.id), loadItemDatabase(), profile), result.id);
+
+		const dropped = [...usableIds(selectionPath(result.id), profile).dropped, ...usableIds(benchPath(result.id), profile).dropped];
+		return {
+			ok: true,
+			className: profile.className,
+			spec: profile.spec.label,
+			created: result.created,
+			label: result.label,
+			kept: result.kept,
+			dropped: dropped.map(item => item.name),
+		};
 	} catch (err) {
 		if (err instanceof ProfileError) return reply.code(400).send({ error: err.message });
 		throw err;
@@ -158,19 +154,43 @@ app.get('/api/catalog', async (_request, reply) => {
 
 app.post<{ Body: { ids: number[] } }>('/api/selection', async request => {
 	const ids = [...new Set((request.body.ids ?? []).map(Number).filter(Boolean))];
-	fs.writeFileSync(SELECTION_PATH, JSON.stringify(ids));
+	const id = profiles.activeId();
+	if (!id) return { ok: false, count: 0 };
+	fs.writeFileSync(selectionPath(id), JSON.stringify(ids));
 	return { ok: true, count: ids.length };
 });
 
 app.post<{ Body: { ids: number[] } }>('/api/bench', async request => {
 	const ids = [...new Set((request.body.ids ?? []).map(Number).filter(Boolean))];
-	fs.writeFileSync(BENCH_PATH, JSON.stringify(ids));
+	const id = profiles.activeId();
+	if (!id) return { ok: false, count: 0 };
+	fs.writeFileSync(benchPath(id), JSON.stringify(ids));
 	return { ok: true, count: ids.length };
 });
 
 app.post<{ Body: Partial<Config> }>('/api/config', async request => {
-	saveConfig({ ...loadConfig(), ...request.body } as Config);
+	const id = profiles.activeId();
+	saveConfig({ ...loadConfig(loadItemDatabase(), id), ...request.body } as Config, id);
 	return { ok: true, config: effectiveConfig(currentProfile()) };
+});
+
+app.post<{ Body: { id: string } }>('/api/profiles/activate', async (request, reply) => {
+	// Swapping state under a running sim would leave the results attributed to
+	// the wrong character.
+	if (runs.isRunning()) return reply.code(409).send({ error: 'A run is in progress — stop it before switching character.' });
+	if (!profiles.activate(request.body.id)) return reply.code(404).send({ error: 'No such profile.' });
+	return { ok: true };
+});
+
+app.post<{ Body: { id: string; label: string } }>('/api/profiles/rename', async (request, reply) => {
+	if (!profiles.rename(request.body.id, request.body.label ?? '')) return reply.code(400).send({ error: 'Could not rename that profile.' });
+	return { ok: true };
+});
+
+app.post<{ Body: { id: string } }>('/api/profiles/delete', async (request, reply) => {
+	if (runs.isRunning()) return reply.code(409).send({ error: 'A run is in progress — stop it first.' });
+	if (!profiles.remove(request.body.id)) return reply.code(404).send({ error: 'No such profile.' });
+	return { ok: true };
 });
 
 app.get('/api/gems', async () => {
@@ -232,7 +252,8 @@ app.post('/api/run', async (_request, reply) => {
 	const profile = currentProfile();
 	if (!profile) return reply.code(400).send({ error: 'Import a profile first.' });
 
-	const selection = usableIds(SELECTION_PATH, profile).ids;
+	const id = profiles.activeId()!;
+	const selection = usableIds(selectionPath(id), profile).ids;
 	if (!selection.length) return reply.code(400).send({ error: 'Add at least one item to sim.' });
 
 	try {
@@ -241,8 +262,8 @@ app.post('/api/run', async (_request, reply) => {
 			profile,
 			config: effectiveConfig(profile),
 			selectedIds: selection,
-			benchIds: usableIds(BENCH_PATH, profile).ids,
-			onFinished: progress => fs.writeFileSync(LAST_RUN_PATH, `${JSON.stringify(progress, null, 2)}\n`),
+			benchIds: usableIds(benchPath(id), profile).ids,
+			onFinished: progress => fs.writeFileSync(lastRunPath(id), `${JSON.stringify(progress, null, 2)}\n`),
 		});
 		return { ok: true };
 	} catch (err) {
@@ -255,7 +276,14 @@ app.post('/api/run/abort', async () => {
 	return { ok: true };
 });
 
-app.get('/api/progress', async () => runs.getProgress());
+app.get('/api/progress', async () => {
+	const live = runs.getProgress();
+	if (live.state !== 'idle' || live.results.length) return live;
+
+	// Idle: show this character's last run rather than an empty table.
+	const id = profiles.activeId();
+	return id ? readJson(lastRunPath(id), live) : live;
+});
 
 app.get('/api/results.csv', async (_request, reply) => {
 	const { results } = runs.getProgress();
@@ -350,6 +378,9 @@ function openPath(target: string): void {
 
 async function main(): Promise<void> {
 	console.log(`\n  Simgrade`);
+
+	const migration = profiles.migrateIfNeeded();
+	if (migration.migrated) console.log(`  Moved your existing setup into a profile: ${migration.label}`);
 	if (STATE_DIR_IS_FALLBACK) console.log(`  Saving data to ${STATE_DIR} (the install folder is not writable).`);
 
 	// A packaged build has no npm, so it fetches its own sim binaries here.

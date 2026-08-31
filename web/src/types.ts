@@ -59,5 +59,7 @@ export interface StateResponse {
 	dropped: string[];
 	version: string;
 	update: { latest: string; url: string; downloadable: boolean } | null;
+	profiles: { id: string; label: string; className: string; spec: string }[];
+	activeProfileId: string | null;
 	running: boolean;
 }

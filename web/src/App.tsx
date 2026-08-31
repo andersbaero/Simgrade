@@ -24,8 +24,10 @@ export default function App() {
 	const refresh = useCallback(async () => {
 		const next = await api.state();
 		setState(next);
-		setSelection(current => (current.length ? current : next.selection));
-		setBench(current => (current.length ? current : next.bench));
+		// Not "keep what we have" — switching character must adopt that
+		// character's lists rather than carrying the previous one's across.
+		setSelection(next.selection);
+		setBench(next.bench);
 	}, []);
 
 	useEffect(() => {
@@ -73,10 +75,27 @@ export default function App() {
 		<div className="app">
 			<header className="top">
 				<h1>Simgrade</h1>
-				{state?.profile && (
-					<span className="muted small">
-						{state.profile.name} · {state.profile.spec}
-					</span>
+				{state && state.profiles.length > 0 && (
+					<select
+						value={state.activeProfileId ?? ''}
+						onChange={async event => {
+							setError(null);
+							try {
+								await api.activateProfile(event.target.value);
+								setSelection([]);
+								setBench([]);
+								await refresh();
+								setProgress(await api.progress());
+							} catch (err) {
+								setError((err as Error).message);
+							}
+						}}>
+						{state.profiles.map(entry => (
+							<option key={entry.id} value={entry.id}>
+								{entry.label}
+							</option>
+						))}
+					</select>
 				)}
 				<div className="spacer" />
 				<span className="muted small">wowsims {state?.release.version}</span>
@@ -135,7 +154,7 @@ export default function App() {
 				</div>
 			)}
 
-			{tab === 'setup' && <ProfilePanel profile={state?.profile ?? null} bench={bench} onImported={() => void refresh()} onBenchChange={changeBench} />}
+			{tab === 'setup' && state && <ProfilePanel state={state} bench={bench} onImported={() => void refresh()} onBenchChange={changeBench} />}
 			{tab === 'items' && <ItemPicker selection={selection} profile={state?.profile ?? null} onSelectionChange={changeSelection} />}
 			{tab === 'settings' && state && <ConfigPanel config={state.config} profile={state.profile} onSaved={() => void refresh()} />}
 			{tab === 'results' && (

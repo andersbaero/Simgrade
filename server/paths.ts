@@ -71,12 +71,30 @@ export const CACHE_DIR = path.join(DATA_DIR, 'cache');
 export const WEB_DIST = path.join(ROOT, 'web', 'dist');
 
 export const DB_PATH = path.join(DATA_DIR, 'db.json');
-export const PROFILE_PATH = path.join(DATA_DIR, 'profile.json');
-export const SELECTION_PATH = path.join(DATA_DIR, 'selection.json');
-export const BENCH_PATH = path.join(DATA_DIR, 'bench.json');
-export const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 export const RELEASE_PATH = path.join(DATA_DIR, 'release.json');
-export const LAST_RUN_PATH = path.join(DATA_DIR, 'last-run.json');
+
+/** Settings shared by every character: iterations, seed, methodology. */
+export const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+/** The profile index: which characters exist and which one is active. */
+export const PROFILES_PATH = path.join(DATA_DIR, 'profiles.json');
+export const PROFILES_DIR = path.join(DATA_DIR, 'profiles');
+
+/** Everything belonging to one character lives under its own directory. */
+export const profileDir = (id: string) => path.join(PROFILES_DIR, id);
+export const profilePath = (id: string) => path.join(profileDir(id), 'profile.json');
+export const selectionPath = (id: string) => path.join(profileDir(id), 'selection.json');
+export const benchPath = (id: string) => path.join(profileDir(id), 'bench.json');
+export const profileConfigPath = (id: string) => path.join(profileDir(id), 'config.json');
+export const lastRunPath = (id: string) => path.join(profileDir(id), 'last-run.json');
+
+// The single-character layout this replaced; read once during migration.
+export const LEGACY = {
+	profile: path.join(DATA_DIR, 'profile.json'),
+	selection: path.join(DATA_DIR, 'selection.json'),
+	bench: path.join(DATA_DIR, 'bench.json'),
+	config: path.join(DATA_DIR, 'config.json'),
+	lastRun: path.join(DATA_DIR, 'last-run.json'),
+};
 
 export const cliBinary = () => path.join(BIN_DIR, process.platform === 'win32' ? 'wowsimcli.exe' : 'wowsimcli');
 export const uiBinary = () => path.join(BIN_DIR, process.platform === 'win32' ? 'wowsimtbc.exe' : 'wowsimtbc');

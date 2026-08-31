@@ -3,10 +3,11 @@
 // every derived value stays user-overridable.
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { GemColor, gemMatchesSocket, ItemSlot, MELEE_HIT_RATING_PER_PERCENT, SPELL_HIT_RATING_PER_PERCENT, Stat } from '../shared/wow.js';
 import { ItemDatabase } from './itemDb.js';
-import { CONFIG_PATH } from './paths.js';
+import { profileConfigPath, SETTINGS_PATH } from './paths.js';
 import type { ParsedProfile } from './profile.js';
 
 /** The three colours a meta gem can demand. */
@@ -235,9 +236,29 @@ export function migrateGems(legacy: LegacyGems, db?: ItemDatabase): Config['gems
 	};
 }
 
-export function loadConfig(db?: ItemDatabase): Config {
-	if (!fs.existsSync(CONFIG_PATH)) return structuredClone(DEFAULT_CONFIG);
-	const stored = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) as Partial<Config> & { gems?: LegacyGems };
+/**
+ * Settings that belong to a character rather than to the app. Everything else —
+ * iteration counts, seed, methodology — is shared. One list drives both load
+ * and save, so the split cannot drift.
+ */
+export const PROFILE_CONFIG_KEYS = ['metric', 'hitStat', 'hitTarget', 'gems', 'defaultEnchants'] as const;
+
+type ProfileConfigKey = (typeof PROFILE_CONFIG_KEYS)[number];
+
+const readJson = (file: string): Record<string, unknown> => {
+	try {
+		return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+	} catch {
+		return {};
+	}
+};
+
+export function loadConfig(db?: ItemDatabase, profileId?: string | null): Config {
+	const shared = readJson(SETTINGS_PATH);
+	const forProfile = profileId ? readJson(profileConfigPath(profileId)) : {};
+	const stored = { ...shared, ...forProfile } as Partial<Config> & { gems?: LegacyGems };
+
+	if (Object.keys(stored).length === 0) return structuredClone(DEFAULT_CONFIG);
 
 	const legacy = stored.gems && typeof (stored.gems as LegacyGems).normal === 'object';
 	const gems = legacy
@@ -263,8 +284,19 @@ export function loadConfig(db?: ItemDatabase): Config {
 	return merged as Config;
 }
 
-export function saveConfig(config: Config): void {
-	fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`);
+/** Splits a config back into the shared file and the character's own. */
+export function saveConfig(config: Config, profileId?: string | null): void {
+	const shared: Record<string, unknown> = {};
+	const forProfile: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(config)) {
+		(PROFILE_CONFIG_KEYS.includes(key as ProfileConfigKey) ? forProfile : shared)[key] = value;
+	}
+
+	fs.writeFileSync(SETTINGS_PATH, `${JSON.stringify(shared, null, 2)}\n`);
+	if (profileId) {
+		fs.mkdirSync(path.dirname(profileConfigPath(profileId)), { recursive: true });
+		fs.writeFileSync(profileConfigPath(profileId), `${JSON.stringify(forProfile, null, 2)}\n`);
+	}
 }
 
 /** Fills in any gem/enchant slots the user has not chosen yet from the profile. */

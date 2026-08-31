@@ -11,13 +11,17 @@ dist/
 bin/
 data/db.json
 
-# Your character and your run state — personal, and meaningless to anyone else.
+# Your characters and your run state — personal, and meaningless to anyone else.
+data/profiles/
+data/profiles.json
+data/settings.json
+data/cache/
+# The single-character layout this replaced, in case an old checkout still has it.
 data/profile.json
 data/selection.json
 data/bench.json
 data/config.json
 data/last-run.json
-data/cache/
 
 # Kept in the repo on purpose:
 #   data/profile.example.json  demo profile the tests load as a fixture

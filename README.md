@@ -77,6 +77,21 @@ copy of the node binary. **It does not cross-compile** — run it on the platfor
 `.github/workflows/release.yml` does that on Windows and macOS runners, smoke-tests each binary
 by launching it and waiting for `/api/state`, and attaches both to a GitHub Release on a `v*` tag.
 
+## Characters
+
+Each character gets its own profile, keyed automatically off the export. Its item list, bench, gem
+choices, enchant defaults and hit target belong to that character; iteration counts, seed and the
+rest of the methodology are shared, so you set those once.
+
+Switch character from the dropdown in the header. Importing a character you have imported before
+refreshes only its gear — the item list, bench and gems stay put, and the import tells you what it
+kept.
+
+The wowsims CLI export usually carries no character name (both of mine come through as `Player`),
+so identity comes from the name *plus* the spec. Two specs of one character therefore get separate
+profiles, which is normally what you want since the wishlist differs. Rename them to taste from the
+Profile tab; the label is cosmetic.
+
 ## Weekly workflow
 
 1. **Configure your character in the wowsims UI** at :3333, exactly as you do today — import
@@ -179,7 +194,10 @@ server/
   simRunner.ts        runs wowsimcli, caches by request hash
   run.ts              run orchestration and confidence intervals
 web/                  React UI (profile, items, settings, results)
-data/                 your profile, selection, config, sim cache  (gitignored)
+data/
+  profiles/<id>/      one directory per character: profile, item list, bench, gems, last run
+  settings.json       shared settings: iterations, seed, methodology
+  profiles.json       which characters exist and which is active
 ```
 
 `data/profile.example.json` is a demo Fury Warrior so the tool has something to show before you

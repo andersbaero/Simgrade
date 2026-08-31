@@ -13,7 +13,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
 	state: () => request<StateResponse>('/api/state'),
-	importProfile: (json: string) => request<{ className: string; spec: string }>('/api/profile', { method: 'POST', body: JSON.stringify({ json }) }),
+	importProfile: (json: string) =>
+		request<{ className: string; spec: string; created: boolean; label: string; kept: { selection: number; bench: number }; dropped: string[] }>(
+			'/api/profile',
+			{ method: 'POST', body: JSON.stringify({ json }) },
+		),
+	activateProfile: (id: string) => request<{ ok: boolean }>('/api/profiles/activate', { method: 'POST', body: JSON.stringify({ id }) }),
+	renameProfile: (id: string, label: string) =>
+		request<{ ok: boolean }>('/api/profiles/rename', { method: 'POST', body: JSON.stringify({ id, label }) }),
+	deleteProfile: (id: string) => request<{ ok: boolean }>('/api/profiles/delete', { method: 'POST', body: JSON.stringify({ id }) }),
 	catalog: () => request<{ items: CandidateItem[] }>('/api/catalog'),
 	saveSelection: (ids: number[]) => request<{ count: number }>('/api/selection', { method: 'POST', body: JSON.stringify({ ids }) }),
 	saveBench: (ids: number[]) => request<{ count: number }>('/api/bench', { method: 'POST', body: JSON.stringify({ ids }) }),
