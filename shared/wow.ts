@@ -481,6 +481,30 @@ export interface CandidateResult {
 	benchNote?: string;
 }
 
+/** One slot's worth of change from an in-game addon gear refresh. */
+export interface AddonSlotChange {
+	slot: ItemSlot;
+	/** 'tuned' is the same item wearing different gems or a different enchant. */
+	kind: 'swap' | 'added' | 'removed' | 'tuned';
+	from: string;
+	to: string;
+}
+
+/** What a gear refresh from the in-game addon changed. */
+export interface AddonImportResult {
+	ok: true;
+	changed: AddonSlotChange[];
+	unchangedCount: number;
+	/** Items left as they were, with the slot when the position identified one. */
+	skipped: { id: number; slot: ItemSlot | null; reason: string }[];
+	removedFromWishlist: string[];
+	gearHit: number;
+	targetHit: number;
+	talentsChanged: boolean;
+	specWarning: string | null;
+	levelWarning: string | null;
+}
+
 export interface RunFailure {
 	label: string;
 	slotLabel: string;

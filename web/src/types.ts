@@ -1,6 +1,13 @@
 // Wire types are defined once in shared/wow.ts and re-exported here so the UI
 // and the server can never drift apart.
-export type { CandidateResult, CatalogItem as CandidateItem, RunFailure, RunProgress } from '../../shared/wow';
+export type {
+	AddonImportResult,
+	AddonSlotChange,
+	CandidateResult,
+	CatalogItem as CandidateItem,
+	RunFailure,
+	RunProgress,
+} from '../../shared/wow';
 
 export interface UpdateProgress {
 	state: 'idle' | 'running' | 'done' | 'error';

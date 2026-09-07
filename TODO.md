@@ -64,9 +64,14 @@ Only the wowsims `Export → CLI` blob carries a whole `RaidSimRequest` (talents
 rotation, consumables, buffs, debuffs, encounter *and* gear), which is why it is
 the profile source today. Two things could make that step less manual:
 
+**Done: the WowSimsExport addon string.** `server/addonProfile.ts` parses it and overlays gear,
+talents and professions onto the active profile; `POST /api/profile/addon` refuses a class that is
+not the active character's, keeps any slot holding an item the pinned database does not know, and
+drops anything you have since equipped from the wishlist. The weekly loop no longer goes through
+the wowsims UI at all.
+
 | Source | wowsims importer | Note |
 |---|---|---|
-| WowSimsExport addon string | `individual_addon_importer.tsx` | Paste the addon output straight in and skip the wowsims UI entirely — but it is gear-only, so it has to overlay an existing profile, not replace it |
 | Bags and bank JSON | `bulk_gear_json_importer.tsx` | Would auto-populate the **bench** from what you actually own, instead of searching for each spare item by hand |
 
 The rule that holds for all of these: anything that is not a full

@@ -4,7 +4,8 @@ import fs from 'node:fs';
 
 import Fastify from 'fastify';
 
-import { GEM_COLOR_NAMES, Profession, STAT_NAMES } from '../shared/wow.js';
+import { AddonImportResult, AddonSlotChange, GEM_COLOR_NAMES, ItemSpec, Profession, STAT_NAMES } from '../shared/wow.js';
+import { parseAddonExport, specFromTalents, withAddonImport } from './addonProfile.js';
 import { Config, loadConfig, saveConfig, resolveHitStat, resolveMetric, hitStatIndex, withSuggestions } from './config.js';
 import { describeStats, loadItemDatabase } from './itemDb.js';
 import { ensureRuntime } from './bootstrap.js';
@@ -137,6 +138,98 @@ app.post<{ Body: { json: string } }>('/api/profile', async (request, reply) => {
 			kept: result.kept,
 			dropped: dropped.map(item => item.name),
 		};
+	} catch (err) {
+		if (err instanceof ProfileError) return reply.code(400).send({ error: err.message });
+		throw err;
+	}
+});
+
+/**
+ * Refreshes the active character from a WowSimsExport addon blob: gear, talents
+ * and professions, and nothing else. Everything that makes one sim comparable
+ * with the next — rotation, consumables, buffs, encounter — is left exactly as
+ * the CLI import set it, which is why this can only ever update a character
+ * that already exists.
+ */
+app.post<{ Body: { json: string } }>('/api/profile/addon', async (request, reply) => {
+	const profile = currentProfile();
+	const id = profiles.activeId();
+	if (!profile || !id) {
+		return reply.code(400).send({ error: 'Import a character with Export → CLI first — an addon export carries only gear and talents.' });
+	}
+	// Re-pointing the profile mid-run would leave the results describing gear the
+	// character no longer has.
+	if (runs.isRunning()) return reply.code(409).send({ error: 'A run is in progress. Stop it before refreshing your gear.' });
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(request.body.json);
+	} catch (err) {
+		return reply.code(400).send({ error: `That is not valid JSON: ${(err as Error).message}` });
+	}
+
+	try {
+		const db = loadItemDatabase();
+		const addon = parseAddonExport(parsed, db, profile.equipment);
+
+		if (addon.wowClass !== profile.wowClass) {
+			return reply.code(400).send({
+				error: `That export is a ${addon.className}, but the active character is a ${profile.className}. Switch character first, or import it with Export → CLI.`,
+			});
+		}
+
+		// Worked out before anything is written, so the diff describes the change
+		// rather than the result. Comparing the whole spec rather than just the id
+		// is what catches a re-gem or a new enchant, which moves your hit without
+		// changing a single item.
+		const name = (spec: ItemSpec | null) => (spec ? (db.item(spec.id)?.name ?? `item ${spec.id}`) : '(empty)');
+		const fingerprint = (spec: ItemSpec | null) =>
+			spec ? `${spec.id}/${spec.enchant ?? 0}/${spec.randomSuffix ?? 0}/${(spec.gems ?? []).join(',')}` : '';
+
+		const slots = profile.equipment.map((was, slot) => ({ slot, was, now: addon.equipment[slot] ?? null }));
+		const changed = slots
+			.filter(entry => fingerprint(entry.was) !== fingerprint(entry.now))
+			.map((entry): AddonSlotChange => ({
+				slot: entry.slot,
+				kind: !entry.was ? 'added' : !entry.now ? 'removed' : entry.was.id !== entry.now.id ? 'swap' : 'tuned',
+				from: name(entry.was),
+				to: name(entry.now),
+			}));
+		const unchangedCount = slots.filter(entry => entry.was && fingerprint(entry.was) === fingerprint(entry.now)).length;
+
+		const talentsChanged = !!addon.talents && addon.talents !== profile.player.talentsString;
+		const implied = specFromTalents(addon.wowClass, addon.talents);
+		const specWarning =
+			implied && !implied.includes(profile.spec.key)
+				? `Those talents do not look like the ${profile.spec.label} this profile sims. Gear and talents were imported, but the rotation was left alone — re-import with Export → CLI if you have respecced.`
+				: null;
+
+		const refreshed = parseProfile(withAddonImport(profile, addon));
+		profiles.createOrUpdate(refreshed.request, refreshed);
+
+		// An item you now wear cannot be an upgrade on itself, so it leaves the list.
+		const equipped = new Set(refreshed.equipment.filter(Boolean).map(spec => spec!.id));
+		const selection = readJson<number[]>(selectionPath(id), []);
+		const removed = selection.filter(itemId => equipped.has(itemId));
+		if (removed.length) fs.writeFileSync(selectionPath(id), JSON.stringify(selection.filter(itemId => !equipped.has(itemId))));
+
+		const config = effectiveConfig(refreshed);
+		const hitIdx = hitStatIndex(resolveHitStat(config, refreshed));
+
+		const result: AddonImportResult = {
+			ok: true,
+			changed,
+			unchangedCount,
+			skipped: addon.skipped,
+			removedFromWishlist: removed.map(itemId => db.item(itemId)?.name ?? `item ${itemId}`),
+			gearHit: gearHitRating(db, refreshed.equipment, hitIdx),
+			targetHit: resolveTargetHitRating(db, refreshed, config),
+			talentsChanged,
+			specWarning,
+			levelWarning:
+				addon.level && addon.level < 70 ? `That export is level ${addon.level}. Simgrade assumes level 70, so some of your gear may be missing.` : null,
+		};
+		return result;
 	} catch (err) {
 		if (err instanceof ProfileError) return reply.code(400).send({ error: err.message });
 		throw err;

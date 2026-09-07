@@ -65,7 +65,7 @@ export interface ParsedProfile {
 export class ProfileError extends Error {}
 
 /** Locates the single player in the request; individual sims always have exactly one. */
-function findPlayer(request: RaidSimRequest): PlayerProto {
+export function findPlayer(request: RaidSimRequest): PlayerProto {
 	const players = request.raid?.parties?.flatMap(party => party.players ?? []) ?? [];
 	const real = players.filter(p => p && (p.class !== undefined || p.equipment));
 	if (real.length === 0) throw new ProfileError('No player found in the profile. Use the wowsims "Export → CLI" button.');

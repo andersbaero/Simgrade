@@ -85,31 +85,45 @@ rest of the methodology are shared, so you set those once.
 
 Switch character from the dropdown in the header. Importing a character you have imported before
 refreshes only its gear — the item list, bench and gems stay put, and the import tells you what it
-kept.
+kept. An addon refresh always applies to the character selected there, and refuses outright if the
+export is a different class, so a paste can never land on the wrong character.
 
 The wowsims CLI export usually carries no character name (both of mine come through as `Player`),
 so identity comes from the name *plus* the spec. Two specs of one character therefore get separate
 profiles, which is normally what you want since the wishlist differs. Rename them to taste from the
 Profile tab; the label is cosmetic.
 
+## First-time setup
+
+1. **Configure your character in the wowsims UI** at :3333 — import from the WowSimsExport addon,
+   set your consumables, buffs, rotation and encounter.
+2. Hit **Export → CLI** and paste the JSON into the *Profile* tab, with the source dropdown on
+   *wowsims Export → CLI*. That single blob carries your talents, rotation, consumables, raid
+   buffs, debuffs, encounter and gear, so every sim differs from your baseline **by gear alone**.
+
+You only do that once per character. After it, a gear refresh takes one paste — see below.
+
 ## Weekly workflow
 
-1. **Configure your character in the wowsims UI** at :3333, exactly as you do today — import
-   from the WowSimsExport addon, set your consumables, buffs, rotation and encounter.
-2. Hit **Export → CLI** and paste the JSON into the *Profile* tab of the Upgrade Simmer.
-   That single blob carries your talents, rotation, consumables, raid buffs, debuffs, encounter
-   and gear, so every sim differs from your baseline **by gear alone**.
-3. Optionally, list your **bag/bench items** at the bottom of the Profile tab (see below).
-4. In the **Items** tab, **search for the items you want** and add them to the list. Search
+1. In game, run the **WowSimsExport addon** and copy what it gives you. Paste it into the *Profile*
+   tab with the source dropdown on *the in-game addon*, and hit **Refresh gear**. It updates your
+   gear, talents and professions and reports what changed slot by slot; your rotation, consumables,
+   buffs and encounter are left exactly as they were, so results stay comparable with the runs you
+   have already done. No wowsims round trip.
+2. Optionally, list your **bag/bench items** at the bottom of the Profile tab (see below).
+3. In the **Items** tab, **search for the items you want** and add them to the list. Search
    matches names, set names, bosses, raids and slots, with partial words in any order
    (`onslaught`, `illidan`, `band`) and tolerance for dropped letters (`mlefc hood` → Hood of
    the Malefic). Enter adds, and the dropdown stays open so you can add several in a row;
    *Add all N* adds every current match. The list below is exactly what will be simmed — nothing
    else. Your selection is remembered between runs.
-5. Hit **Run upgrade sim** and read the **Results** tab.
+4. Hit **Run upgrade sim** and read the **Results** tab.
 
-Next week: re-export your profile (your gear changed), keep the same ticks, run again. Sims are
-cached, so unaffected items are not re-run.
+Next week: refresh from the addon (your gear changed), keep the same ticks, run again. Anything you
+won since last time drops off the list automatically, and sims are cached, so unaffected items are
+not re-run. The cache belongs to the sim engine that filled it, so moving to a newer wowsims re-sims
+everything rather than mixing numbers from two engines. Come back to **Export → CLI** only when something other than gear changes — a new
+rotation, different consumables, another encounter, or a respec into a spec with its own sim.
 
 ## How the numbers are produced
 
@@ -187,6 +201,7 @@ server/
   itemDb.ts           indexes wowsims' db.json (items, gems, enchants, bosses, zones)
   bench.ts            bag items offered only as hit-target levers
   profile.ts          parses the Export → CLI blob; rebuilds it with new gear
+  addonProfile.ts     reads the WowSimsExport addon blob; overlays gear/talents/professions
   gearing.ts          stat accounting, gem policy, hit solver
   metaGems.ts         meta gem activation rules ported from wowsims
   candidates.ts       item → gear sets to sim, including tier bundles

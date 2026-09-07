@@ -50,9 +50,8 @@ export default function BenchPanel({ bench, profile, onBenchChange }: Props) {
 				)}
 			</div>
 			<p className="muted small" style={{ marginTop: 10 }}>
-				Gear you own but aren't wearing — the spare ring without hit, the off-set helm you kept. These never compete as upgrades. They are only
-				swapped in when a candidate item leaves you off your hit target and gems alone can't fix it: the run then sims both the gem-only fix and
-				the bench swap, and reports whichever is better.
+				Hit-swap pieces: gear you own but aren't wearing, simmed only when a candidate leaves your hit target way off and gems can't close the
+				gap. Never ranked as upgrades — anything you want ranked goes in the Items tab.
 				{profile && ` Hit target: ${Math.round(profile.targetHit)} ${profile.hitStatName} rating.`}
 			</p>
 

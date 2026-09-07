@@ -1,4 +1,4 @@
-import type { CandidateItem, GemOption, RunProgress, StateResponse, UpdateProgress } from './types';
+import type { AddonImportResult, CandidateItem, GemOption, RunProgress, StateResponse, UpdateProgress } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
 	const resp = await fetch(url, {
@@ -18,6 +18,7 @@ export const api = {
 			'/api/profile',
 			{ method: 'POST', body: JSON.stringify({ json }) },
 		),
+	importAddon: (json: string) => request<AddonImportResult>('/api/profile/addon', { method: 'POST', body: JSON.stringify({ json }) }),
 	activateProfile: (id: string) => request<{ ok: boolean }>('/api/profiles/activate', { method: 'POST', body: JSON.stringify({ id }) }),
 	renameProfile: (id: string, label: string) =>
 		request<{ ok: boolean }>('/api/profiles/rename', { method: 'POST', body: JSON.stringify({ id, label }) }),
