@@ -26,3 +26,9 @@ data/last-run.json
 # Kept in the repo on purpose:
 #   data/profile.example.json  demo profile the tests load as a fixture
 #   data/release.json          the pinned wowsims release
+
+# Personal session automation: the hook wiring and the wowsims upgrade reports
+# it produces. scripts/check-wowsims.mjs itself is committed - it is a useful
+# standalone check - but what it writes, and who runs it, is not.
+.claude/settings.local.json
+.claude/wowsims/

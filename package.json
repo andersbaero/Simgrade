@@ -15,7 +15,8 @@
 		"dev:web": "vite",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
-		"build:exe": "node scripts/build-exe.mjs"
+		"build:exe": "node scripts/build-exe.mjs",
+		"check:wowsims": "node scripts/check-wowsims.mjs --verbose --force"
 	},
 	"dependencies": {
 		"fastify": "^4.28.1"
