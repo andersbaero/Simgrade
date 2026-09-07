@@ -1,6 +1,10 @@
 // Runs sims by shelling out to wowsimcli, which takes a protojson RaidSimRequest
 // and prints a protojson RaidSimResult. wowsimcli already parallelises a single
 // sim across every core, so sims are run one at a time.
+//
+// Results are cached by request, and the cache is scoped to the wowsims release
+// that produced them: a new engine can change DPS for identical gear, so results
+// from two versions are not comparable and must never share a ranked table.
 
 import { execFile } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -9,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import { pinnedVersion } from './bootstrap.js';
 import { CACHE_DIR, cliBinary } from './paths.js';
 import type { Metric } from './profile.js';
 import type { RaidSimRequest } from './profile.js';
@@ -27,8 +32,18 @@ export class SimError extends Error {}
 /** Thrown when the user stops a run, so callers can tell it apart from a bad item. */
 export class SimAbortedError extends SimError {}
 
-function cacheKey(request: RaidSimRequest, metric: Metric): string {
-	return crypto.createHash('sha256').update(`${metric}\n${JSON.stringify(request)}`).digest('hex').slice(0, 32);
+/**
+ * The wowsims release is part of the key, not just the request: the same gear
+ * sims differently across engine versions, so a pin bump has to miss the cache
+ * rather than silently serve a number the current engine would not produce.
+ * Entries from an older pin are simply never looked up again.
+ */
+export function cacheKey(request: RaidSimRequest, metric: Metric, version: string): string {
+	return crypto
+		.createHash('sha256')
+		.update(`${version}\n${metric}\n${JSON.stringify(request)}`)
+		.digest('hex')
+		.slice(0, 32);
 }
 
 function readMetric(result: Record<string, any>, metric: Metric): { value: number; stdev: number } {
@@ -49,6 +64,8 @@ export class SimRunner {
 	constructor(
 		private readonly binary = cliBinary(),
 		private readonly useCache = true,
+		/** The sim engine these results belong to. Injectable so the key is testable. */
+		private readonly version = pinnedVersion() ?? 'unknown',
 	) {
 		fs.mkdirSync(CACHE_DIR, { recursive: true });
 	}
@@ -71,7 +88,7 @@ export class SimRunner {
 	private async runNow(request: RaidSimRequest, metric: Metric): Promise<SimResult> {
 		if (this.aborted) throw new SimAbortedError('Run aborted.');
 
-		const key = cacheKey(request, metric);
+		const key = cacheKey(request, metric, this.version);
 		const cachePath = path.join(CACHE_DIR, `${key}.json`);
 		if (this.useCache && fs.existsSync(cachePath)) {
 			try {
