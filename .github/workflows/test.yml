@@ -8,7 +8,15 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # All three platforms, because the release workflow builds on Windows and
+    # macOS and a tag is a bad place to discover a platform-specific failure.
+    # v1.6.0 was tagged with a Windows-only parse error that every ubuntu run
+    # had passed.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 

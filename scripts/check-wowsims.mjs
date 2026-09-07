@@ -1,5 +1,11 @@
-#!/usr/bin/env node
 // Is the pinned wowsims release still the newest one?
+//
+// Deliberately has no shebang. tests/checkWowsims.test.ts imports this module
+// to hold isNewerVersion() against the app's own isNewer(), and a leading '#!'
+// is not valid JavaScript — whether it is stripped before parsing depends on
+// which loader gets the file, which is why it parsed everywhere except Windows
+// CI. Both callers already run it as `node scripts/check-wowsims.mjs`, and the
+// file is not executable, so the shebang was never doing anything.
 //
 // Written to be safe to run automatically at the start of a session, which
 // means three rules: it never exits non-zero, it prints nothing when there is
